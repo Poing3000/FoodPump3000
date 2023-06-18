@@ -1,10 +1,10 @@
 /*
- * Name:	Futterpumpe / FoodPump3000
+ * Name:	FoodPump3000
  * Author:	Poing3000
  * Status:	Dev
  *
  * Description:
- * This is the code for the cat food pump, called Futterpumpe (Foodpump3000). 
+ * This code is for the cat food pump, called Futterpumpe (Foodpump3000). 
  * It is built for a Raspberry Pico W and a TMC2209 stepper driver.
  * Further info at: https://github.com/Poing3000/FoodPump3000
  * 
