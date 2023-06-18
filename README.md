@@ -1,4 +1,4 @@
-![Foodpump3000](img/FP3000_logo.png)
+![Foodpump3000](img/FP3000_logo.jpg)
 
 The Food Pump 3000 is a automatic cat food pump, intended to be used for automatically feeding cats.
 This food pump can be used on its own; however, it is actually part of the [Purr Pleaser 3000](https://github.com/Poing3000/PurrPleaser3000), a fully automatic cat feeding machine (for multiple cats).
