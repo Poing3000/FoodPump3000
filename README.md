@@ -4,6 +4,7 @@ The Food Pump 3000 is a standalone automatic cat feeder pump.
 However, its true potential is realized when it is integrated into the [Purr Pleaser 3000](https://github.com/Poing3000/PurrPleaser3000), a fully automated cat feeding system designed for multiple cats.
 
 The Food Pump 3000 is compatible with the Raspberry Pico W and can be conveniently programmed using the Arduino IDE.
+All design parts can be found at...
 
 
 ## To do:
