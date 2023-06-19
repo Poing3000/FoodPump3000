@@ -22,4 +22,9 @@
   <ItemGroup>
     <ClCompile Include="FP3000_PicoW.ino" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="__vm\.FP3000_PicoW.vsarduino.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>
