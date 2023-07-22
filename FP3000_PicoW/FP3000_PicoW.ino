@@ -14,7 +14,7 @@
  *		[x] - Find endstop with IR Sensor
  *		[x] - Find endstop with Stall
  *		[x] - Use IR as default homing sensor (later use stall as backup and for error management).
- *		[ ] - Implement own homing function (error management/stall detection)
+ *		[x] - Implement own homing function (error management/stall detection) >> SEE SpeedyStepper4Purr.h
  * [ ] - Approx. filling
  * [ ] - Accurate filling
  * [ ] - TMC2209 Prime with IR Sensor check
@@ -77,7 +77,7 @@
 #define MIRCO_STEPS     32      // Set microsteps (32 is a good compromise between CPU load and noise)
 #define TCOOLS          400		// max 20 bits
 #define MAX_RANGE       6600    // Max physical slider range is app. 6230 steps. Thus, 6600 is a safe value for error management.
-#define	STALL_VALUE		 30		// Stall threshold [0..255] (lower = more sensitive) - 30 is quite low, yet safe for stable error management.
+#define	STALL_VALUE		 50		// Stall threshold [0..255] (lower = more sensitive) - 30 is quite low, yet safe for stable error management (50 for accuracy)
 
 // Stepper Driver (TMC2209)
 #define DIR_1	11				// Direction pin
@@ -95,22 +95,6 @@ TMC2209Stepper driver_1(&SERIAL_PORT_2, R_SENSE, DRIVER_ADDRESS_1);	// Create Dr
 //SpeedyStepper4Purr stepper_0 (0);									// Create Stepper motor	
 SpeedyStepper4Purr stepper_1 (1);
 //---------------------------------*
-
-//**********************************
-//DELETE
-/*
-void StallIndication();
-
-void StallIndication()
-{
-	flag_stalled = true;
-}
-
-  // Setup Driver Interrupt for Motor Stall Detection
-  attachInterrupt(digitalPinToInterrupt(homeDiagPin), StallIndication, RISING);
-
-*/
-//**********************************
 
 //Variables
 //[...]
@@ -137,98 +121,8 @@ void StallIndication()
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 // FUNCTIONS:
-/*
-	// Homing (find endstop) - Note, blocking function!
-	void GoHome() {
-		DEBUG_DEBUG("GoHome()");
+//[...]
 
-		// Pump 1 - Homing
-		DEBUG_VERBOSE("Homing Pump 1.");
-		if (stepper_1.moveToHomeInSteps(1, SPEED, MAX_RANGE) != true) {
-
-			// E001 - Pump 1: Homing Error, Endstop not found.
-			DEBUG_ERROR("E011");
-			PumpErrorHandling(0, 1);
-		}
-		stepper_1.setCurrentPositionInSteps(0);
-		DEBUG_VERBOSE("Homing finished.");
-	}
-
-	void PumpErrorHandling(byte pump, byte error) {
-	DEBUG_DEBUG("Pump Error Handling");
-		switch (error) {
-			// 1 - SOLVE HOMING ERROR
-			case 1: 
-				// ===========================================================================================
-				// If stall is true, either there is an endstop malfunction or the slider is stuck.
-				// So stall flag is reset to then check if stall apears again while trying to move the slider.
-				// If stall is again true, the slider is stuck and we need to try to free it up.
-				// If stall is false/we got to get the slider unstuck, we can try to home again.
-				// If this fails again, the endstop may not working, so we can try to home with stall.
-				// -------------------------------------------------------------------------------------------
-				DEBUG_VERBOSE("Checking slider error.");
-				if (flag_stalled_1 == true) {						
-					flag_stalled_1 = false;							
-					stepper_1.moveRelativeInSteps(1000);			
-					if (flag_stalled_1 == true) {					
-
-						// Slider stuck, try to free up.
-						DEBUG_VERBOSE("Slider stuck, trying to free up..");
-						int i = 1, y = 1;
-						stepper_1.setSpeedInStepsPerSecond(1000);	// Reduce to generate more torque.
-
-						// Vibrate slider to free up.
-						// ---------------------------------------------------
-						while (i <= 1000) {
-							stepper_1.moveRelativeInSteps(i);
-							if (i > 0) {
-								i = -i;
-							}
-							else {
-
-								if (y < 200) {
-									i = -i + 1;
-									y++;
-								}
-								else {
-									i = -i + y;
-								}
-								stepper_1.setSpeedInStepsPerSecond(1000 * y);
-							}
-						}
-						// ---------------------------------------------------
-						stepper_1.setSpeedInStepsPerSecond(SPEED);	// Reset speed.
-
-						// Check if slider is free now.
-						flag_stalled_1 = false;
-						stepper_1.moveRelativeInSteps(1000);
-						if (flag_stalled_1 == true) {
-							// Slider still stuck, EMGY mode.
-							DEBUG_VERBOSE("Slider still stuck, EMGY mode.");
-							// [TODO] >>BREAK<<
-						}
-
-					}
-					// Slider is free, try to home again.
-					DEBUG_VERBOSE("Slider is free, trying to home again.");
-
-					if (stepper_1.moveToHomeInSteps(1, SPEED, MAX_RANGE, LIMIT_1) != true) {
-
-						DEBUG_VERBOSE("Possible endstop failure, try to home with stall.");
-						// TODO Homing with stall.
-					}
-					DEBUG_VERBOSE("2nd Homing attempt successful.");
-
-				}
-				else {
-					// If stall is false, neither the endstop works nor the stall detection.
-					DEBUG_VERBOSE("Drivetrain/Motor malfunction detected.");
-					// Drivetrain/Motor malfunction >> EMGY mode [TODO] >>BREAK<<
-				}
-			break;
-		}
-	}
-*/
 // END OF FUNCTIONS++++++++++++++++++++++++++++++++++++++++++
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -275,12 +169,20 @@ void setup() {
 		//Start Driver and Motor
 		digitalWrite(ENABLE, LOW);			// Enable motor
 
-		// DELETE - DELAY FOR SERIAL MONITOR
-		delay(1000);
+		// DELETE - TESTING ONLY: Move Home
+		bool home_test = false;
+		byte home_result = 0;
+		while (1) {
+			home_result = stepper_1.moveToHome(-1, SPEED, MAX_RANGE, true);
 
-		// Move Home
-		while (stepper_1.moveToHome(-1, SPEED, MAX_RANGE, true) != 1);
-		Serial.print("HOMING DONE");
+			if (home_result > 0) {
+				DEBUG_VERBOSE("Homing result: %d", home_result);
+				break;
+			}
+			
+		}
+		byte error_result = stepper_1.ErrorHandling(1, -1, SPEED, MAX_RANGE);
+		DEBUG_VERBOSE("ErrorHandling result: %d", error_result);
 
 	//---------------------------------*
 }
