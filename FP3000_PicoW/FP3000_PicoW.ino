@@ -77,7 +77,8 @@
 #define MIRCO_STEPS     32      // Set microsteps (32 is a good compromise between CPU load and noise)
 #define TCOOLS          400		// max 20 bits
 #define MAX_RANGE       6600    // Max physical slider range is app. 6230 steps. Thus, 6600 is a safe value for error management.
-#define	STALL_VALUE		 50		// Stall threshold [0..255] (lower = more sensitive) - 30 is quite low, yet safe for stable error management (50 for accuracy)
+#define	STALL_VALUE		50		// Stall threshold [0..255] (lower = more sensitive) - 30 is quite low, yet safe for stable error management (50 for accuracy)
+#define START_DIST_S	200		// Start distance to go from endstop (only used for stall homing)
 
 // Stepper Driver (TMC2209)
 #define DIR_1	11				// Direction pin
@@ -88,8 +89,8 @@
 
 // Stepper Motor (NEMA 17)
 #define LIMIT_1	4				// Limit switch pin
-#define SPEED	10000			// Speed (steps/s)
-#define ACCEL	100000			// Acceleration (steps/s^2)
+#define SPEED	10000			// Speed (steps/s) (10000 is good)
+#define ACCEL	100000			// Acceleration (steps/s^2) (100000	is good)
 
 TMC2209Stepper driver_1(&SERIAL_PORT_2, R_SENSE, DRIVER_ADDRESS_1);	// Create Driver
 //SpeedyStepper4Purr stepper_0 (0);									// Create Stepper motor	
@@ -97,7 +98,7 @@ SpeedyStepper4Purr stepper_1 (1);
 //---------------------------------*
 
 //Variables
-//[...]
+const int Feed_Range = 4600;	// Typical feeding distance
 
 // Flags
 //[...]
@@ -169,20 +170,38 @@ void setup() {
 		//Start Driver and Motor
 		digitalWrite(ENABLE, LOW);			// Enable motor
 
+		/*
 		// DELETE - TESTING ONLY: Move Home
 		bool home_test = false;
 		byte home_result = 0;
+		byte error_result = 0;
 		while (1) {
-			home_result = stepper_1.moveToHome(-1, SPEED, MAX_RANGE, true);
+			home_result = stepper_1.moveToHome(-1, SPEED, MAX_RANGE, START_DIST_S, true);
 
 			if (home_result > 0) {
-				DEBUG_VERBOSE("Homing result: %d", home_result);
-				break;
+				if (home_result >= 2) {
+					DEBUG_VERBOSE("Error occured");
+					if ((stepper_1.ErrorHandling(1, home_result, SPEED, MAX_RANGE) == 0) {
+						//HOME AGAIN
+					}
+					else {
+						//EMGY
+					}
+				}
+
+				DEBUG_VERBOSE("error_result: %d", error_result);
+				DEBUG_VERBOSE("Home again in 2s..");
+				delay(2000);
+				while (1) {
+					home_result = stepper_1.moveToHome(-1, SPEED, MAX_RANGE, START_DIST_S, true);
+					if (home_result > 0) {
+					break;
+					}
+				}
+			break;
 			}
-			
-		}
-		byte error_result = stepper_1.ErrorHandling(1, -1, SPEED, MAX_RANGE);
-		DEBUG_VERBOSE("ErrorHandling result: %d", error_result);
+		} DEBUG_VERBOSE("home_result: %d", home_result);
+		*/
 
 	//---------------------------------*
 }
@@ -191,37 +210,11 @@ void setup() {
 
 // MAIN PROGRAM (LOOP):
 void loop() {
-	// Move to Position
-	/*
-	delay(2000);
-	DEBUG_VERBOSE("+ MOVE UP");
-	stepper_1.moveToPositionInSteps(6000);
-	DEBUG_VERBOSE("~ STOPPED");
-	delay(2000);
 
-	DEBUG_VERBOSE("- MOVE DOWN");
-	stepper_1.moveToPositionInSteps(0);
-	DEBUG_VERBOSE("~STOPPED");
-	*/
+
+
+
+
 }
-/*
-void loop1() {
-	if (stalled == true) {
-		DEBUG_VERBOSE("********************* STALLED *********************");
-		stalled = false;
-	}
-	// Only print if TSTEP has changed by +/- 10:
-	static int previousTSTEP = 0; // Variable to store previous TSTEP value
-
-	int currentTSTEP = driver_0.TSTEP(); // Get the current TSTEP value
-
-	if (abs(currentTSTEP - previousTSTEP) >= 10) {
-		DEBUG_VERBOSE.print("TSTEP: ");
-		DEBUG_VERBOSE.println(currentTSTEP);
-		previousTSTEP = currentTSTEP; // Update the previous TSTEP value
-	}
-	delay(1);
-}
-*/
 // END OF MAIN PROGRAM+++++++++++++++++++++++++++++++++++++++
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
