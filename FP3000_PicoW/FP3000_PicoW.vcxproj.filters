@@ -20,8 +20,8 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\FP3000_PicoW.ino" />
-    <ClCompile Include="src\FP3000.cpp">
+    <ClCompile Include="FP3000_PicoW.ino" />
+    <ClCompile Include="FP3000.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -29,13 +29,10 @@
     <ClInclude Include="__vm\.FP3000_PicoW.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\FP3000.h">
+    <ClInclude Include="Config.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\Config.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\FP3000.h">
+    <ClInclude Include="FP3000.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

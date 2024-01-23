@@ -10,8 +10,8 @@
  * Also note that all motors (Driver: <TMCStepper.h> and Stepper: <SpeedyStepper4Purr.h>) setting need to be
  * defined in the main sketch (.ino), this libary only controls the pump.
  * Further info at: https://github.com/Poing3000/FoodPump3000
- * 
- * 
+ *
+ *
  * Updates - DEV:
  * [ ] - [...]
 */
@@ -25,7 +25,7 @@
 
 // SETUP FUNCTIONS
 
-FP3000::FP3000(byte MotorNumber, long std_distance, long dir_home, HardwareSerial &serial, float driver_rsense, uint8_t driver_adress)
+FP3000::FP3000(byte MotorNumber, long std_distance, long dir_home, HardwareSerial& serial, float driver_rsense, uint8_t driver_adress)
 	: StepperMotor(MOTOR_NUMBER), StepperDriver(&serial, driver_rsense, driver_adress) {
 
 	// Remember settings
@@ -36,7 +36,7 @@ FP3000::FP3000(byte MotorNumber, long std_distance, long dir_home, HardwareSeria
 
 }
 //TODO: Add error handling / Return error - change from void to byte and return error code
-void FP3000::SetupPump(uint16_t motor_current, uint8_t stall_val,uint16_t mic_steps, uint32_t tcool,
+void FP3000::SetupPump(uint16_t motor_current, uint8_t stall_val, uint16_t mic_steps, uint32_t tcool,
 	byte step_pin, byte dir_pin, byte limit_pin, byte diag_pin, float stepper_speed, float stepper_accel, long max_range, bool use_expander) {
 
 	// Set Up Driver
@@ -67,7 +67,7 @@ void FP3000::SetupPump(uint16_t motor_current, uint8_t stall_val,uint16_t mic_st
 		homing_result = StepperMotor.moveToHome(-1, stepper_speed, 10000, true);		// Home Pump
 	}
 	// TODO: Add error handling / Return error
-	if(homing_result != 1) {
+	if (homing_result != 1) {
 		// Error
 	}
 	else {
@@ -86,7 +86,7 @@ void FP3000::SetupPump(uint16_t motor_current, uint8_t stall_val,uint16_t mic_st
 // TEST FUNCTIONS - DELETE LATER
 
 void FP3000::Test(bool moveUP) {
-	if(moveUP) {
+	if (moveUP) {
 		StepperMotor.moveRelativeInSteps(4600);
 	}
 	else {
@@ -123,7 +123,7 @@ void FP3000::AccurateFill(byte accu_amount) {
 /*
 // Pump Food
 void FP3000::PumpFood(byte fill_amount) {
-	
+
 	// TODO: Function for Approximate filling
 
 	// TODO: Funtion for Accurate filling
@@ -139,4 +139,4 @@ void FP3000::PumpFood(byte fill_amount) {
 
 
 // END OF PRIVATE FUNCTIONS++++++++++++++++++++++++++++++++++
-//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++
