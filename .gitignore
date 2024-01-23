@@ -12,3 +12,5 @@ FP3000_PicoW/FP3000_PicoW.vcxproj.filters
 .vs/FoodPump3000/v17/ipch/AutoPCH/59fcf1d21a7b4a4e/FP3000.ipch
 .vs/FoodPump3000/v17/ipch/AutoPCH/7c99888b793ba7ea/FP3000_PICOW.ipch
 .vs/FoodPump3000/v17/Solution.VC.db
+*.vsidx
+*.user

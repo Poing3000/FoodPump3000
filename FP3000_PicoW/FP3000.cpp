@@ -26,7 +26,7 @@
 // SETUP FUNCTIONS
 
 FP3000::FP3000(byte MotorNumber, long std_distance, long dir_home, HardwareSerial& serial, float driver_rsense, uint8_t driver_adress)
-	: StepperMotor(MOTOR_NUMBER), StepperDriver(&serial, driver_rsense, driver_adress) {
+	: StepperMotor(MotorNumber), StepperDriver(&serial, driver_rsense, driver_adress) {
 
 	// Remember settings
 	//_MotorNumber = MotorNumber;					// Uniuqe Pump number - NEEDED / DELETE?

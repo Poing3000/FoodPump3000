@@ -66,7 +66,7 @@
 #include <TMCStepper.h> //DELETE LATER
 #include <SpeedyStepper4Purr.h> //DELETE LATER
 #include <Wire.h>
-#include <MCP23017.h>
+#include <MCP23017.h>	// FOR LIBRARY DELETE / ADAPT PINS
 
 
 // Debugging
@@ -102,35 +102,7 @@ byte Mode_c1 = 0;			// Mode Core 1 (Pumps); start with IDLE
 byte Power_c1 = true;			// Indication if motors and secondaries are powered
 
 // Stepper Settings
-/*
-	   // General Stepper Driver Settings (change according to your connections to the stepper driver / your needs).
-	   // Library settings (TMCStepper.h) can be foound at: https://teemuatlut.github.io/TMCStepper/class_t_m_c2209_stepper.html
-		   // Driver (here default for TMC2209)
-		   #define ENABLE				15			// Enable Pin
-		   #define	SERIAL_PORT_2		Serial2		// HardwareSerial port (TX: 8, RX: 9)
-		   #define R_SENSE				0.11f		// Sense resistor value of the driver fur current cal.
-		   #define	DRIVER_ADDRESS_1	0b00		// Drivers address
-
-		   #define CURRENT				400			// Max current (mA) supplied to the motor
-		   #define	STALL_VALUE			50			// Stall threshold [0..255] (lower = more sensitive) - 30 is quite low, yet safe for stable error management (50 for accuracy)
-		   #define MIRCO_STEPS			32			// Set microsteps (32 is a good compromise between CPU load and noise)
-		   #define TCOOLS				400			// max 20 bits
-
-		   // Stepper Motor (NEMA 17)
-		   #define SPEED				10000		// Speed (steps/s) (10000 is good)
-		   #define ACCEL				100000		// Acceleration (steps/s^2) (100000	is good)
-		   #define STD_FEED_DIST		4600		// Standard range (steps) the slider should moves when feeding (4600 is good)
-		   #define	PUMP_MAX_RANGE		6000		// Max range (steps) the slider can move inside the pump (6000 is good)
-
-	   // Unique Motor Settings (change according to your connections to the stepper driver)
-		   // Stepper Motor 0
-		   #define MOTOR_0				0			// Uniuqe stepper motor number
-		   #define	STEP_0				12			// Step pin
-		   #define	DIR_0				11			// Direction pin
-		   #define	LIMIT_0				4			// Limit switch pin
-		   #define	DIAG_0				13			// DIAG pin for stall detection
-		   #define DIR_TO_HOME			-1			// Direction to home (1 = CW, -1 = CCW)
-*/
+ 
 // General Stepper Driver Settings (change according to your connections to the stepper driver / your needs).
 // Library settings (TMCStepper.h) can be foound at: https://teemuatlut.github.io/TMCStepper/class_t_m_c2209_stepper.html
 	// Driver (here default for TMC2209)
