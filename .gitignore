@@ -1,1 +1,8 @@
 ﻿
+FoodPump3000.sln
+FP3000_PicoW/__vm/.FP3000_PicoW.vsarduino.h
+FP3000_PicoW/__vm/Compile.vmps.xml
+FP3000_PicoW/__vm/Configuration.Debug.vmps.xml
+FP3000_PicoW/__vm/Upload.vmps.xml
+FP3000_PicoW/FP3000_PicoW.vcxproj
+FP3000_PicoW/FP3000_PicoW.vcxproj.filters
