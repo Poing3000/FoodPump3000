@@ -1,15 +1,1 @@
-﻿################################################################################
-# Diese .gitignore-Datei wurde von Microsoft(R) Visual Studio automatisch erstellt.
-################################################################################
-
-/.vs/*
-*__vm
-*.sln
-*.vcxproj
-FP3000_PicoW/.vs/FP3000_PicoW/v17/.suo
-*.db
-FP3000_PicoW/.vs/FP3000_PicoW/v17/Browse.VC.db
-FP3000_PicoW/.vs/FP3000_PicoW/v17/ipch/AutoPCH/59fcf1d21a7b4a4e/FP3000.ipch
-*.ipch
-FP3000_PicoW/FP3000_PicoW.vcxproj.filters
-*.user
+﻿
