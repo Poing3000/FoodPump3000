@@ -60,8 +60,7 @@
  // ----------------------------------------------------------
  // Libraries
 	// Stepper
-	#include "Config.h"
-#include "FP3000.h"
+	#include "FP3000.h"
 	#include <TMCStepper.h> //DELETE LATER
 	#include <SpeedyStepper4Purr.h> //DELETE LATER
 	#include <Wire.h>

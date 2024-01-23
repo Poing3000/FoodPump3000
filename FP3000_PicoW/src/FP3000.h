@@ -13,7 +13,7 @@
 #define _FP3000_h
 
 #include <Arduino.h>
-#include "config.h"
+#include "Config.h"
 #include <SpeedyStepper4Purr.h>
 #include <TMCStepper.h>
 

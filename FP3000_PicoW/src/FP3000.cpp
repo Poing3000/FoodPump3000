@@ -43,7 +43,7 @@ void FP3000::SetupPump(uint16_t motor_current, uint8_t stall_val,uint16_t mic_st
 	StepperDriver.begin();						// Start driver
 	StepperDriver.toff(4);						// Not used, but required to enable the motor
 	StepperDriver.blank_time(24);				// Recommended blank time
-	StepperDriver.I_scale_analog(false);		// false = extrenal current sense resistors
+	StepperDriver.I_scale_analog(false);		// false = external current sense resistors
 	StepperDriver.internal_Rsense(false);		// false = deactivates internal resistor (it can't handle necessary currents).
 	StepperDriver.mstep_reg_select(true);		// Microstep through UART, not by Pins.
 	StepperDriver.rms_current(motor_current);	// Sets the current in milliamps.

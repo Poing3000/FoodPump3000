@@ -20,7 +20,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="FP3000_PicoW.ino" />
+    <ClCompile Include="src\FP3000_PicoW.ino" />
     <ClCompile Include="src\FP3000.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -33,6 +33,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\Config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FP3000.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
