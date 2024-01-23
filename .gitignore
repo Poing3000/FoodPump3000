@@ -3,10 +3,6 @@
 ################################################################################
 
 /.vs
-/FP3000_PicoW/__vm
-/FP3000_PicoW/.vs/FP3000_PicoW
-/FP3000_PicoW/FP3000_PicoW.sln
-/FP3000_PicoW/FP3000_PicoW.vcxproj
-/FP3000_PicoW/FP3000_PicoW.vcxproj.filters
-/FP3000_PicoW/FP3000_PicoW.vcxproj.user
+*__vm
+*.sln
 *.vcxproj
