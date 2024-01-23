@@ -22,10 +22,11 @@
 
 
 
+
 // SETUP FUNCTIONS
 
-FP3000::FP3000(byte MotorNumber, long std_distance, long dir_home, HardwareSerial& serial, float driver_rsense, uint8_t driver_adress)
-	: StepperMotor(MotorNumber), StepperDriver(&serial, driver_rsense, driver_adress) {
+FP3000::FP3000(byte MotorNumber, long std_distance, long dir_home, HardwareSerial &serial, float driver_rsense, uint8_t driver_adress)
+	: StepperMotor(MOTOR_NUMBER), StepperDriver(&serial, driver_rsense, driver_adress) {
 
 	// Remember settings
 	//_MotorNumber = MotorNumber;					// Uniuqe Pump number - NEEDED / DELETE?
@@ -36,7 +37,7 @@ FP3000::FP3000(byte MotorNumber, long std_distance, long dir_home, HardwareSeria
 }
 //TODO: Add error handling / Return error - change from void to byte and return error code
 void FP3000::SetupPump(uint16_t motor_current, uint8_t stall_val,uint16_t mic_steps, uint32_t tcool,
-	byte step_pin, byte dir_pin, byte limit_pin, byte diag_pin, float stepper_speed, float stepper_accel, long max_range) {
+	byte step_pin, byte dir_pin, byte limit_pin, byte diag_pin, float stepper_speed, float stepper_accel, long max_range, bool use_expander) {
 
 	// Set Up Driver
 	StepperDriver.begin();						// Start driver
@@ -55,7 +56,7 @@ void FP3000::SetupPump(uint16_t motor_current, uint8_t stall_val,uint16_t mic_st
 	StepperDriver.pdn_disable(true);			// Enable UART
 
 	// Set Up Stepper
-	StepperMotor.connectToPins(step_pin, dir_pin, limit_pin, diag_pin);
+	StepperMotor.connectToPins(step_pin, dir_pin, limit_pin, diag_pin, use_expander);
 	StepperMotor.setSpeedInStepsPerSecond(stepper_speed);
 	StepperMotor.setAccelerationInStepsPerSecondPerSecond(stepper_accel);
 
@@ -92,6 +93,13 @@ void FP3000::Test(bool moveUP) {
 		StepperMotor.moveRelativeInSteps(-4600);
 	}
 }
+
+byte FP3000::Test_Connection() {
+	byte cTest = 99;
+	cTest = StepperDriver.test_connection(); // 0 = OK, else Error
+	return cTest;
+}
+
 
 // END OF TEST FUNCTIONS ++++++++++++++++++++++++DELETE LATER
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

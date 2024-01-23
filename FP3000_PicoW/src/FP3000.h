@@ -13,6 +13,7 @@
 #define _FP3000_h
 
 #include <Arduino.h>
+#include "config.h"
 #include <SpeedyStepper4Purr.h>
 #include <TMCStepper.h>
 
@@ -22,13 +23,15 @@ class FP3000 {
 public:
 
 	// pulblic members
-	FP3000(byte MotorNumber, long std_distance, long dir_home, HardwareSerial& serial, float driver_rsense, uint8_t driver_adress);
+	FP3000(byte MotorNumber, long std_distance, long dir_home, HardwareSerial &serialT, float driver_rsense, uint8_t driver_adress);
 	
 	void SetupPump(uint16_t motor_current, uint8_t stall_val, uint16_t mic_steps, uint32_t tcool,
-		byte step_pin, byte dir_pin, byte limit_pin, byte diag_pin, float stepper_speed, float stepper_accel, long max_range);
+		byte step_pin, byte dir_pin, byte limit_pin, byte diag_pin, float stepper_speed, float stepper_accel, long max_range, bool use_expander);
 
+	//TESTING - DELETE LATER
 	//void PumpFood(byte food_amount);
 	void Test(bool moveUP);
+	byte Test_Connection();
 
 private:
 
