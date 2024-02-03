@@ -61,12 +61,8 @@
  // Libraries
 	// Stepper
 #include "FP3000.h"
-#include "Config.h"
-#include "FP3000.h"
-#include <TMCStepper.h> //DELETE LATER
-#include <SpeedyStepper4Purr.h> //DELETE LATER
 #include <Wire.h>
-#include <MCP23017.h>	// FOR LIBRARY DELETE / ADAPT PINS
+//#include <MCP23017.h>	// FOR LIBRARY DELETE / ADAPT PINS
 
 
 // Debugging
@@ -112,34 +108,54 @@ byte Power_c1 = true;			// Indication if motors and secondaries are powered
 
 #define CURRENT				400			// Max current (mA) supplied to the motor
 #define	STALL_VALUE			50			// Stall threshold [0..255] (lower = more sensitive) - 30 is quite low, yet safe for stable error management (50 for accuracy)
+#define HOME_STALL_VALUE	100			// Stall threshold for homing [0..255] (lower = more sensitive) - 100 sensitive but good for homing
 #define MIRCO_STEPS			32			// Set microsteps (32 is a good compromise between CPU load and noise)
 #define TCOOLS				400			// max 20 bits
 
 // Stepper Motor (NEMA 17)
-#define SPEED				10000		// Speed (steps/s) (10000 is good)
+//#define SPEED				10000		// Speed (steps/s) (10000 is good)
+#define SPEED				1000		// DELTE LATER! TESTING ONLY
 #define ACCEL				100000		// Acceleration (steps/s^2) (100000	is good)
 #define STD_FEED_DIST		4600		// Standard range (steps) the slider should moves when feeding (4600 is good)
 #define	PUMP_MAX_RANGE		6000		// Max range (steps) the slider can move inside the pump (6000 is good)
 
 // Unique Motor Settings (change according to your connections to the stepper driver)
+
+	// Stepper Motor 0
+#define MOTOR_0				0			// Uniuqe stepper motor number
+#define	STEP_0				4			// Step pin
+#define	DIR_0				5			// Direction pin
+// ! CHANGE LIMIT PIN TO EXPANDER PIN AFTER TESTING !
+//TODO: CHANGE ACC
+#define	LIMIT_0				99			// Limit switch pin (via expander MCP23017)
+#define	DIAG_0				3			// DIAG pin for stall detection
+#define	DRIVER_ADDRESS_0	0b00		// Drivers address (0b01: MS1 is LOW and MS2 is HIGH)			
+#define DIR_TO_HOME_0			1			// Direction to home (1 = CW, -1 = CCW)
+
+
 	// Stepper Motor 1
 #define MOTOR_1				1			// Uniuqe stepper motor number
 #define	STEP_1				7			// Step pin
 #define	DIR_1				8			// Direction pin
 // ! CHANGE LIMIT PIN TO EXPANDER PIN AFTER TESTING !
-#define	LIMIT_1				28			// Limit switch pin (via expander MCP23017)
+//TODO: CHANGE ACC
+#define	LIMIT_1				99			// Limit switch pin (via expander MCP23017)
 #define	DIAG_1				6			// DIAG pin for stall detection
 #define	DRIVER_ADDRESS_1	0b10		// Drivers address (0b01: MS1 is LOW and MS2 is HIGH)			
-#define DIR_TO_HOME			-1			// Direction to home (1 = CW, -1 = CCW)
+#define DIR_TO_HOME_1		-1			// Direction to home (1 = CW, -1 = CCW)
 
 // PurrPleaser Board Settings
 #define MCP_ADDRESS			0x20		// Port expander address
+#define MCP_INTA			15			// Interrupt pin A
+#define MCP_INTB			21			// Interrupt pin B
 #define SLC_PIN				17			// SLC pin
 #define SDA_PIN				16			// SDA pin
 #define	VV_EN				22			// 5V Enable Pin
-#define	EXPANDER			false		// Use expander (true) or not (false)
+#define	EXPANDER			true		// Use expander (true) or not (false)
 
-MCP23017 myMCP = MCP23017(MCP_ADDRESS);
+
+// Port Expander
+MCP23017 mcp = MCP23017(MCP_ADDRESS);
 
 
 //---------------------------------*
@@ -158,7 +174,8 @@ uint32_t  FIFO_R_c1 = 0;		// FIFO message read from at Core 1
 
 // Create Pumps
 // Add pumps here if needed (e.g. 
-FP3000 Pump_0(MOTOR_1, STD_FEED_DIST, DIR_TO_HOME, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_1);
+FP3000 Scale_0(MOTOR_0, STD_FEED_DIST, DIR_TO_HOME_0, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_0, mcp);
+FP3000 Pump_1(MOTOR_1, STD_FEED_DIST, DIR_TO_HOME_1, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_1, mcp);
 //---------------------------------*
 
 
@@ -176,11 +193,11 @@ void setup() {
 
 	rp2040.idleOtherCore(); // Stop Core 1
 
-	//DELETE DELAY FOR SERIAL
-	delay(2000);
-
 	// Debugging
 	Debug.setDebugLevel(DEBUG_LEVEL);
+	if (Debug.getDebugLevel() >= 0) {	// Give time to open serial monitor
+		delay(1000);					
+	}
 
 	//---------------------------------*
 
@@ -188,42 +205,55 @@ void setup() {
 	DEBUG_DEBUG("Setup Core 0 finished");
 	rp2040.restartCore1();
 
+	//TODO: IMPLEMENT ERROR HANDLING
+	if (rp2040.fifo.pop() == 1) {		// ModeCode: 1 = Setup Core 1 finished
+		DEBUG_DEBUG("Setup Core 1 finished");
+	}
+	else {
+		DEBUG_ERROR("Setup Core 1 failed");
+	}
+
 }
 
 // SETUP - CORE 1:
 void setup1() {
 
-	delay(1000); // Give Core 0 a head start
+	delay(1000); // Give Core 0 a head start, just in case.
 	pinMode(LED_BUILTIN, OUTPUT); // DELETE LATER OR IMPLEMENT IN ERROR HANDLING
 
 	//Stepper Setup
 	//---------------------------------
 		// Pin Setup
 	pinMode(DRIVER_ENABLE, OUTPUT);
+	pinMode(DRIVER_ENABLE, HIGH);
 	pinMode(VV_EN, OUTPUT);
 	pinMode(DIAG_1, INPUT);
 	digitalWrite(VV_EN, HIGH);
+
+	// TODO: UPADTE PIN SETUP FOR EXPANDER
+	pinMode(15, INPUT);
 
 
 	// Driver Setup
 	SERIAL_PORT_1.begin(115200);
 
-	// Setip Expander
+	// Setup Expander
 	Wire.setSCL(17);
 	Wire.setSDA(16);
 	Wire.begin();
 	// TODO: IMPLEMENT ERROR HANDLING
-	if (!myMCP.Init()) {
+	if (!mcp.Init()) {
 		DEBUG_DEBUG("I2C ERROR");
 	}
-	myMCP.setPortMode(0b10000000, A);  // (GPA&B need to OUTPUT)
-	myMCP.setPortMode(0b11000011, B);  // (GPA&B need to OUTPUT)
+	mcp.setPortMode(0b10000000, A);					// set GPA IN-/OUTPUTS (GPA/B 7 needs to be OUTPUT))
+	mcp.setPortMode(0b11000011, B);					// set GPB IN-/OUTPUTS
+	mcp.setInterruptPinPol(HIGH);					// set INTA and INTB active-high
+	mcp.setInterruptOnChangePort(0b00000111, A);	// set interrupt-on-change for all pins on port A
+	mcp.getIntCap(A);								// clear interrupt capture on port A
+	
 
-	// Setup Pumps
-	Pump_0.SetupPump(CURRENT, STALL_VALUE, MIRCO_STEPS, TCOOLS, STEP_1, DIR_1, LIMIT_1, DIAG_1, SPEED, ACCEL, PUMP_MAX_RANGE, EXPANDER);
-
-
-	//TESTING/IMPLEMENT IF NEEDED
+	/*
+	//TODO: IMPLEMENT TESTING CONNECTION
 	Serial.print(F("\nTesting connection to Pump 1..."));
 	byte conResult = Pump_0.Test_Connection();
 	if (conResult) {
@@ -239,20 +269,27 @@ void setup1() {
 	else {
 		Serial.println(F("OK")); //staus 0
 	}
+	*/
 
-
-
-
-
-
-	//Start Pump 
+		// Setup Pumps
 	digitalWrite(DRIVER_ENABLE, LOW);			  // Enable Driver
+
+	// TODO: DELETE/CHANGE BYTE RP AND SERIAL.PRINT ETC. AFTER TESTING
+	byte RS = Scale_0.SetupScale(CURRENT, STALL_VALUE, HOME_STALL_VALUE, MIRCO_STEPS, TCOOLS, STEP_0, DIR_0, LIMIT_0, DIAG_0, SPEED, ACCEL, PUMP_MAX_RANGE, EXPANDER, MCP_INTA);
+	byte RP = Pump_1.SetupPump(CURRENT, STALL_VALUE, HOME_STALL_VALUE, MIRCO_STEPS, TCOOLS, STEP_1, DIR_1, LIMIT_1, DIAG_1, SPEED, ACCEL, PUMP_MAX_RANGE, EXPANDER, MCP_INTA);
+
+	Serial.print("Result Setup Scale: ");
+	Serial.println(RS);
+	Serial.print("Result Setup Pump: ");
+	Serial.println(RP);
+
 
 	//---------------------------------*
 
 	// Setup finished
-	DEBUG_DEBUG("Setup Core 1 finished");
 	digitalWrite(LED_BUILTIN, HIGH);  // DELETE LATER OR IMPLEMENT IN ERROR HANDLING
+	//TODO IMPLEMENT ERROR HANDLING
+	rp2040.fifo.push(1);			  // ModeCode: 1 = Setup Core 1 finished
 }
 
 
@@ -270,6 +307,7 @@ void loop() {
 	FIFO_c0++;
 	*/
 
+	/*
 	// DIAG/STALL TEST - DELETE LATER
 	if (digitalRead(DIAG_1) == LOW) {
 		digitalWrite(LED_BUILTIN, LOW);
@@ -278,7 +316,14 @@ void loop() {
 		digitalWrite(LED_BUILTIN, HIGH);
 	}
 
-
+	// DELETE LATER! DEBUG/TESTING
+	if (mcp.getPin(0, A) == HIGH) {
+		digitalWrite(LED_BUILTIN, HIGH);
+	}
+	else {
+		digitalWrite(LED_BUILTIN, LOW);
+	}
+	*/
 }
 
 // CORE 1
@@ -290,12 +335,17 @@ void loop1() {
 		// [...]
 		// DELETE LATER! DEBUG/TESTING
 		while (1) {
+
+			
 			//delay(100);
-			Pump_0.Test(true);
-			//myMCP.setPin(0, B, LOW);
+			Scale_0.Test(false);
+			Pump_1.Test(true);
+			//mcp.setPin(0, B, HIGH);
 			//delay(100);
-			Pump_0.Test(false);
-			//myMCP.setPin(0, B, HIGH);
+			Scale_0.Test(true);
+			Pump_1.Test(false);
+			//mcp.setPin(0, B, LOW);
+			
 		}
 		digitalWrite(DRIVER_ENABLE, HIGH);			  // Diable Driver
 
