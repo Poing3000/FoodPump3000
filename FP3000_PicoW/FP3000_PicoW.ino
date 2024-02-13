@@ -45,10 +45,10 @@
  * 1 - Stall detected.
  * 2 - Homing successful at 2nd try.
  *
- * -- Error/Warning sytnax ---
+ * -- Status/Error/Warning sytnax ---
  * E		0			0
  * ^		^			^
- * Type		Device		Actual Problem
+ * Type		Device		Info/Problem
  * ===================
  */
 
@@ -107,14 +107,14 @@ byte Power_c1 = true;			// Indication if motors and secondaries are powered
 #define R_SENSE				0.11f		// Sense resistor value of the driver fur current cal.
 
 #define CURRENT				400			// Max current (mA) supplied to the motor
-#define	STALL_VALUE			50			// Stall threshold [0..255] (lower = more sensitive) - 30 is quite low, yet safe for stable error management (50 for accuracy)
-#define HOME_STALL_VALUE	100			// Stall threshold for homing [0..255] (lower = more sensitive) - 100 sensitive but good for homing
+#define	STALL_VALUE			60			// Stall threshold [0..255] (lower = more sensitive) >> use AutotuneStall(bool quickCheck) to find the best value.
+#define HOME_STALL_VALUE	60			// Stall threshold for homing [0..255] (lower = more sensitive) >> use AutotuneStall(bool quickCheck) to find the best value.
 #define MIRCO_STEPS			32			// Set microsteps (32 is a good compromise between CPU load and noise)
 #define TCOOLS				400			// max 20 bits
 
 // Stepper Motor (NEMA 17)
-//#define SPEED				10000		// Speed (steps/s) (10000 is good)
-#define SPEED				1000		// DELTE LATER! TESTING ONLY
+#define SPEED				10000		// Speed (steps/s) (10000 is good)
+//#define SPEED				1000		// DELTE LATER! TESTING ONLY
 #define ACCEL				100000		// Acceleration (steps/s^2) (100000	is good)
 #define STD_FEED_DIST		4600		// Standard range (steps) the slider should moves when feeding (4600 is good)
 #define	PUMP_MAX_RANGE		6000		// Max range (steps) the slider can move inside the pump (6000 is good)
@@ -174,8 +174,8 @@ uint32_t  FIFO_R_c1 = 0;		// FIFO message read from at Core 1
 
 // Create Pumps
 // Add pumps here if needed (e.g. 
-FP3000 Scale_0(MOTOR_0, STD_FEED_DIST, DIR_TO_HOME_0, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_0, mcp);
-FP3000 Pump_1(MOTOR_1, STD_FEED_DIST, DIR_TO_HOME_1, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_1, mcp);
+FP3000 Scale_0(MOTOR_0, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_0, SPEED, STALL_VALUE, HOME_STALL_VALUE, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_0, mcp, EXPANDER, MCP_INTA);
+FP3000 Pump_1(MOTOR_1, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_1, SPEED, STALL_VALUE, HOME_STALL_VALUE, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_1, mcp, EXPANDER, MCP_INTA);
 //---------------------------------*
 
 
@@ -275,8 +275,8 @@ void setup1() {
 	digitalWrite(DRIVER_ENABLE, LOW);			  // Enable Driver
 
 	// TODO: DELETE/CHANGE BYTE RP AND SERIAL.PRINT ETC. AFTER TESTING
-	byte RS = Scale_0.SetupScale(CURRENT, STALL_VALUE, HOME_STALL_VALUE, MIRCO_STEPS, TCOOLS, STEP_0, DIR_0, LIMIT_0, DIAG_0, SPEED, ACCEL, PUMP_MAX_RANGE, EXPANDER, MCP_INTA);
-	byte RP = Pump_1.SetupPump(CURRENT, STALL_VALUE, HOME_STALL_VALUE, MIRCO_STEPS, TCOOLS, STEP_1, DIR_1, LIMIT_1, DIAG_1, SPEED, ACCEL, PUMP_MAX_RANGE, EXPANDER, MCP_INTA);
+	byte RS = Scale_0.SetupMotor(CURRENT, MIRCO_STEPS, TCOOLS, STEP_0, DIR_0, LIMIT_0, DIAG_0, ACCEL);
+	byte RP = Pump_1.SetupMotor(CURRENT, MIRCO_STEPS, TCOOLS, STEP_1, DIR_1, LIMIT_1, DIAG_1, ACCEL);
 
 	Serial.print("Result Setup Scale: ");
 	Serial.println(RS);
@@ -334,6 +334,18 @@ void loop1() {
 	case 0: // IDLE
 		// [...]
 		// DELETE LATER! DEBUG/TESTING
+
+
+		// DELETE TESING
+		/*
+		Serial.print("New Autotune Stall Result for Scale_0: ");
+		Serial.println(Scale_0.AutotuneStall(true));
+		Serial.print("New Autotune Stall Result for Pump_1: ");
+		Serial.println(Pump_1.AutotuneStall(true));
+		//Scale_0.AutotuneStall(true);
+		//Pump_1.AutotuneStall(true);
+		*/
+
 		while (1) {
 
 			
@@ -347,7 +359,7 @@ void loop1() {
 			//mcp.setPin(0, B, LOW);
 			
 		}
-		digitalWrite(DRIVER_ENABLE, HIGH);			  // Diable Driver
+		digitalWrite(DRIVER_ENABLE, HIGH);			  // Disable Driver
 
 
 		//TODO: Function, power of motors, etc.
