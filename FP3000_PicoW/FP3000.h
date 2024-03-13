@@ -16,6 +16,8 @@
 #include <SpeedyStepper4Purr.h>
 #include <TMCStepper.h>
 #include <MCP23017.h>
+#include <HX711.h>
+#include "LittleFS.h"
 
 class FP3000 {
 
@@ -26,23 +28,27 @@ public:
 		HardwareSerial &serialT, float driver_rsense, uint8_t driver_address, MCP23017 &mcpRef, bool use_expander, byte mcp_INTA);
 
 	byte SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tcool, byte step_pin, byte dir_pin, byte limit_pin, byte diag_pin, float stepper_accel);
-	byte SetupScale();
+	byte SetupScale(uint8_t nvmAddress, uint8_t dataPin, uint8_t clockPin);
 	byte HomeMotor();
-	byte ErrorHandling(byte error_code);
 	byte AutotuneStall(bool quickCheck);
 	byte CheckError();
 	byte CheckWarning();
-
+	float Measure();
+	float CalibrateScale();
 
 	//TESTING - DELETE LATER
-	void Test(bool moveUP);
+	void MotorTest(bool moveUP);
 	byte Test_Connection();
 
 private:
 
+	// private functions
+	byte ManageError(byte error_code);
+
 	// private members
 	SpeedyStepper4Purr StepperMotor;
 	TMC2209Stepper StepperDriver;
+	HX711 Scale;
 
 	byte _MotorNumber;
 	MCP23017& mcp;
@@ -54,6 +60,15 @@ private:
 	uint8_t _home_stall_val;				// Stall value for homing
 	bool _use_expander;						// Use MCP23017 for endstop
 	byte _mcp_INTA;							// INTA pin for MCP23017
+	byte _nvmAddress;						// Address for saving calibration data
+
+	// Syntax for function returns
+	enum ReturnCode : byte {
+		BUSY,
+		OK,
+		ERROR,
+		WARNING
+	};
 
 	// Error and Warning Codes
 	enum ErrorCode : byte {
@@ -61,14 +76,16 @@ private:
 		DRIVER_CONNECTION,	
 		STEPPER_UNKOWN,
 		STEPPER_JAMMED,
-		SCALE_CONNECTION
+		SCALE_CONNECTION,
+		FILE_SYSTEM
 	}; ErrorCode Error;
 
 	enum WarningCode : byte {
 		NO_WARNING,
 		STEPPER_FREEDRIVE,
 		STEPPER_ENDSTOP,
-		STEPPER_STALL
+		STEPPER_STALL,
+		SCALE_CALFILE
 	}; WarningCode Warning;
 
 
