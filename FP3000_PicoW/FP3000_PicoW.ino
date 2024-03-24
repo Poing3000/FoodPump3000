@@ -101,8 +101,8 @@ const int Feed_Range_c0 = 4600;	// Typical feeding distance
 #define R_SENSE				0.11f		// Sense resistor value of the driver fur current cal.
 
 #define CURRENT				400			// Max current (mA) supplied to the motor
-#define	STALL_VALUE			60			// Stall threshold [0..255] (lower = more sensitive) >> use AutotuneStall(bool quickCheck) to find the best value.
-#define HOME_STALL_VALUE	60			// Stall threshold for homing [0..255] (lower = more sensitive) >> use AutotuneStall(bool quickCheck) to find the best value.
+#define	STALL_VALUE			0			// Stall threshold [0..255] (lower = more sensitive) >> use AutotuneStall(bool quickCheck) to find the best value. Set to 0 if you want stall values loaded from file.
+#define HOME_STALL_VALUE	0			// Stall threshold for homing [0..255] (lower = more sensitive) >> use AutotuneStall(bool quickCheck) to find the best value. Set to 0 if you want stall values loaded from file.
 #define MIRCO_STEPS			32			// Set microsteps (32 is a good compromise between CPU load and noise)
 #define TCOOLS				400			// max 20 bits
 
@@ -146,6 +146,10 @@ const int Feed_Range_c0 = 4600;	// Typical feeding distance
 #define SDA_PIN				16			// SDA pin
 #define	VV_EN				22			// 5V Enable Pin
 #define	EXPANDER			true		// Use expander (true) or not (false)
+
+// Other Settings
+#define APP_OFFSET			4			// Offset in g for approx. feeding
+ 
 //---------------------------------*
 
 // Port Expander
@@ -244,22 +248,22 @@ void setup1() {
 		// Setup Scale 0
 		setupResult = Scale_0.SetupScale(SCALE_NVM_1, DATA_PIN_1, CLOCK_PIN_1);
 		if (setupResult != OK) {
-			ReceiveWarningsErrors_c1(Scale_0, SCALE_1, setupResult);
+			ReceiveWarningsErrors_c1(Scale_0, SCALE_1);
 		}
 
 		// Setup Motor 0
 		setupResult = Scale_0.SetupMotor(CURRENT, MIRCO_STEPS, TCOOLS, STEP_0, DIR_0, LIMIT_0, DIAG_0, ACCEL);
 		if (setupResult != OK) {
-			ReceiveWarningsErrors_c1(Scale_0, MOTOR_0, setupResult);
+			ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
 		}
 
 		// Setup Motor 1
 		setupResult = Pump_1.SetupMotor(CURRENT, MIRCO_STEPS, TCOOLS, STEP_1, DIR_1, LIMIT_1, DIAG_1, ACCEL);
 		if (setupResult != OK) {
-			ReceiveWarningsErrors_c1(Pump_1, MOTOR_1, setupResult);
+			ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
 		}
 	//---------------------------------*
-
+	
 	// Setup finished
 	digitalWrite(LED_BUILTIN, HIGH);  // Visual indication that hardware setup is finished
 }
@@ -281,28 +285,65 @@ void loop() {
 // CORE 1
 void loop1() {
 	
+	// Variables
+	//-------------------------------------------------------------
 	// The Core 1 loop switches between different operating modes.
 	// The mode is set by Core 0. Default is IDLE.
 	enum Mode : byte {
 		IDLE,
 		FEED,
 		CALIBRATE,
+		AUTOTUNE,
 		EMGY
 	};
 	static byte Mode_c1 = IDLE;
-	//static byte Mode_c1 = CALIBRATE; // TESTING ONLY
+	//static byte Mode_c1 = CALIBRATE; // DELETE
+
+	// Syntax for function returns
+	enum ReturnCode : byte {
+		BUSY,
+		OK,
+		ERROR,
+		WARNING
+	};
+	static byte scaleReturn = BUSY;
+	static byte pumpReturn = BUSY;
+
+	// Feeding Modes
+	enum FeedingMode : byte {
+		PRIME,
+		APPROX,
+		ACCURATE,
+		EMPTY
+	};
+	static byte feedMode = PRIME;
+
+	// TODO ADAPT FEEDING AMOUNT / RECEICE FROM CORE 0
+	// Feeding Amount
+	float feedAmount = 10;
+
+	// Calibration Status
+	byte calStatus = 0;
+	byte prevCalStatus = 1;
+	//-------------------------------------------------------------
 
 	// Operating Modes
 	switch (Mode_c1) {
 	case IDLE:
-		
-		//Serial.print("UNITS: ");
-		//Serial.println(Scale_0.Measure());
-		//delay(250);
 
+		// ===============================================================
+		// IDLE Mode is the default mode, where the device is waiting for
+		// commands from Core 0.
+		// ===============================================================
 
 		// Power Off unused devices
 		Power_c1(false);
+
+
+		// DELETE - TESTING
+		Mode_c1 = FEED; // DELETE
+		
+
 
 		// Check sensors once in a while
 
@@ -310,18 +351,176 @@ void loop1() {
 
 
 		break;
-	case FEED: // FEED
-		// [...]
-		//TODO: Function, Feeding (Prime, Approx., Accurate, Empty)
+	case FEED:
+
+		// ===============================================================
+		// This mode is to automatically dispense food until the desired
+		// amount is reached. The amount is set by Core 0 and is measured
+		// in grams by the selected scale. The feeding process works in
+		// four steps:
+		// 1. Prime: Go to start position (endstops) and tare the scale.
+		// 2. Approx.: Move slider up and down to get an approximate
+		//    amount of food, close to the desired amount (APP_OFFSET).
+		// 3. Accurate: Move slider in a precise filling motion until
+		//    the desired amount is reached.
+		// 4. Empty: Do a final measurement and empty the scale dumper.
+		// NOTE, the final scale reading is sent to Core 0. Whereat
+		// Core 0 should save the data in order to compensate a given 
+		// error in the next feeding process. (E.g. if the pump has
+		// dispensed 2g too much, Core 0 should subtract 2g from the next
+		// feeding command.)
+		// ===============================================================
+
+		//TODO: IMPLEMENT ERROR HANDLING - MAX CYCLES
+
+		switch (feedMode) {
+		case PRIME:
+			// Turn on power
+			Power_c1(true);
+
+			// Prime Scale
+			if (scaleReturn == BUSY) {
+				scaleReturn = Scale_0.Prime();
+				if (scaleReturn == ERROR || scaleReturn == WARNING) {
+					ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
+				}
+			}
+
+
+			// Wait for Scale to finishe, then Prime Pump
+			else if (pumpReturn == BUSY) {
+				pumpReturn = Pump_1.Prime();
+				if (pumpReturn == ERROR || pumpReturn == WARNING) {
+					ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
+				}
+			}
+
+			// Check if priming is finished
+			// If reset flags and go to next mode.
+			if (scaleReturn != BUSY && pumpReturn != BUSY) {
+				scaleReturn = BUSY;
+				pumpReturn = BUSY;
+				feedMode = APPROX;
+			}
+			break;
+		case APPROX:
+			// Do one cycle, then check if the desired amount
+			// (APP_OFFSET) is reached. If not, do another cycle.
+			if (Pump_1.MoveCycle() != BUSY) {
+				if (Scale_0.Measure(2) >= feedAmount - APP_OFFSET) {
+					feedMode = ACCURATE;
+				}
+				// Check if there was something to warn about (stall).
+				ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
+			}
+
+			break;
+		case ACCURATE:
+			// Accurate
+			if (Pump_1.MoveCycleAccurate() != BUSY) {
+				if (Scale_0.Measure(3) >= feedAmount) {
+					
+					// Return slider back to home position and do final measurement
+					if (Pump_1.MoveTo(0) != BUSY) {
+						
+						// Do Final Measurement and send data to Core 0
+						// (Uses floatToUint16 to convert measured float to uint16_t)
+						PackPushData('M', SCALE_1, floatToUint16(Scale_0.Measure(7)));
+						
+						// Go to next mode
+						feedMode = EMPTY;
+					}
+				}
+			}
+			break;
+		case EMPTY:
+			// Return slider back to home position
+			if (Pump_1.MoveTo(0) != BUSY) {
+
+				// Empty Scale
+				if(Scale_0.EmptyScale() != BUSY) {
+					// Check if there was something to warn about (stall).
+					ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
+					ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
+					
+					// Back to IDLE
+					Mode_c1 = IDLE;
+				}
+			}
+			break;
+		}
 		break;
-	case CALIBRATE: // CALIBRATE
-		// [...]
-		//TODO: Function, Calibrate Scales
-		Scale_0.CalibrateScale();
-		Mode_c1 = IDLE; // TESTING ONLY
-		//TODO: Function, Calibrate Slider [?]
+
+	case CALIBRATE:
+
+		// ===============================================================
+		// Calibrates selected scales.
+		// You can choose between verbose and silent calibration:
+		// Verbose calibration: Shows calibration steps on Serial Monitor
+		// Silent calibration will use the debug messeages / transmits
+		// them to Core 0.
+		// ===============================================================
+
+		// Verbose calibration
+		//Scale_0.CalibrateScale(true);
+		
+		// Silent calibration
+		// -------------------------
+		// CalStatus:
+		// 0 - WAITING
+		// 1 - TARE
+		// 2 - PLACE_WEIGHT
+		// 3 - CALIBRATING
+		// 4 - SAVEING_CALIBRATION
+		// 5 - FINISHED
+		// 6 - CALIBRATION_ERROR
+		// -------------------------
+		while (calStatus <= 4) { // 5 = Calibration successful			
+			// Calibrate
+			calStatus = Scale_0.CalibrateScale(false);
+			// Send calibration updates to Core 0.
+			if (prevCalStatus != calStatus) {
+				PackPushData('C', 0, calStatus);
+				prevCalStatus = calStatus;
+			}
+			// (No need to implement error handling here, as it should be user detecable.)
+		}
+		
+		// This is blocking code, back to IDLE
+		Mode_c1 = IDLE;
+
 		break;
-	case EMGY: // EMGY
+	case AUTOTUNE:
+
+		// ===============================================================
+		// Autotunes stall detection for selected devices.
+		// You can toggle "quick check" and "save to file":
+		// Quick check: Will quickly check the stall detection, though
+		// might not show the most accurate results (usually good enough).
+		// Quick check set to false: Will be much slower but may give
+		// more accurate results.
+		// Save to file: Will save the stall values to NVM. Thus, they can
+		// be loaded automatically on startup.
+		// NOTE, stall values will be read from NVM if STALL_VALUE /
+		// HOME_STALL_VALUE is set to 0. E.g. if only STALL_VALUE is set
+		// to 0, only this will be read from NVM, but not for homeing.
+		// ===============================================================
+
+		// Turn on power
+		Power_c1(false);
+		
+		// Autotune Stall
+		// (true/true for quick check and save to file)
+		Scale_0.AutotuneStall(true, true);
+		ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
+
+		Pump_1.AutotuneStall(true, true);
+		ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
+
+		// Turn off power
+		Power_c1(false);
+
+	case EMGY:
 		// [...]
 		//TODO: Function, Emergency Mode
 		break;
@@ -348,20 +547,58 @@ void loop1() {
 
 // SUPPORT FUNCTIONS:
 
+
+// Feeding Function
+
+
+
 // Function to receive warnings and errors
-void ReceiveWarningsErrors_c1(FP3000 &device, byte deviceNumber, byte setupResult) {
+void ReceiveWarningsErrors_c1(FP3000 &device, byte deviceNumber) {
 
 	byte type;
-	uint16_t info;
-	if (setupResult == 3) {		// 3 = WARNING, 2 = ERROR
-		type = 'W';
-		info = device.CheckWarning();
+	static uint16_t info_W = 0; // default 0 = no warning
+	static uint16_t info_E = 0; // default 0 = no error
+
+	// Check Warnings
+	type = 'W';
+	info_W = device.CheckWarning();
+	if (info_W != 0) {
+		PackPushData(type, deviceNumber, info_W);
 	}
-	else {
-		type = 'E';
-		info = device.CheckError();
+	
+	// Check Errors
+	type = 'E';
+	info_E = device.CheckError();
+	if (info_E != 0) {
+		PackPushData(type, deviceNumber, info_E);
 	}
-	PackPushData(type, deviceNumber, info);
+}
+
+// Function to pack and push data
+void PackPushData(uint8_t type, uint8_t device, uint16_t info) {
+	uint32_t data = ((uint32_t)type << 24) | ((uint32_t)device << 16) | info;
+	rp2040.fifo.push(data);
+}
+
+// Function to unpack data from a single uint32_t for FIFO transport
+void unpackData(uint32_t data, char& type, uint8_t& device, uint16_t& info) {
+	type = static_cast<char>((data >> 24) & 0xFF);
+	device = (data >> 16) & 0xFF;
+	info = data & 0xFFFF;
+}
+
+// Function to save float measurements to uint16_t
+uint16_t floatToUint16(float value) {
+	value = value * 100;
+	uint16_t uValue = static_cast<uint16_t>(value);
+	return uValue;
+}
+
+// Function convert data uint16_t to float
+float uint16ToFloat(uint16_t value) {
+	float fValue = static_cast<float>(value);
+	fValue = fValue / 100.0;
+	return fValue;
 }
 
 // Function to pop and debug data from Core 1
@@ -380,11 +617,8 @@ bool PopAndDebug_c0() {
 	  "Standby",
 	  "Feeding",
 	  "Calibrating",
-	  "EMERGENCY FEEDING",
-	  "Cal. Remove Weight",
-	  "Cal. Place 20g",
+	  "EMERGENCY FEEDING"
 	};
-
 
 	// Error Codes Messeages
 	// ==========================================================
@@ -393,7 +627,8 @@ bool PopAndDebug_c0() {
 	  "Driver connection error",
 	  "Stepper unknown error",
 	  "Stepper jammed",
-	  "Scale connection error"
+	  "Scale connection error",
+	  "File system error"
 	};
 	// =========================================================*
 
@@ -404,7 +639,21 @@ bool PopAndDebug_c0() {
 	  "Stepper sluggish",
 	  "Endstop defective",
 	  "Stall detected",
-	  "Not calibrated"
+	  "Not calibrated",
+	  "Stall value not set"
+	};
+	// =========================================================*
+
+	// Calibration Codes Messeages
+	// ==========================================================
+	const char* CALIBRATION_MESSAGES[] = {
+	  "20s time to remove all weight!",
+	  "Taring..",
+	  "20s time to place 20g!",
+	  "Calibrating..",
+	  "Saving calibration value to file..",
+	  "Calibration successful.",
+	  "Calibration failed."
 	};
 	// =========================================================*
 
@@ -419,6 +668,13 @@ bool PopAndDebug_c0() {
 			// Debug message
 			if (type == 'S') {
 				DEBUG_DEBUG("%s", STATUS_MESSAGES[info]);
+			}
+			else if (type == 'M') {
+				float finfo = uint16ToFloat(info);
+				DEBUG_DEBUG("Scale (device#) %d: %.2fg", device, finfo);
+			}
+			else if (type == 'C') {
+				DEBUG_DEBUG("Calibration Scale %d: %s", device, CALIBRATION_MESSAGES[info]);
 			}
 			else if (type == 'W') {
 				DEBUG_WARNING("WARNING Device: %d, %s", device, WARNING_MESSAGES[info]);
@@ -437,39 +693,22 @@ bool PopAndDebug_c0() {
 	return popped;
 }
 
-// Function to pack and push data
-void PackPushData(uint8_t type, uint8_t device, uint16_t info) {
-	uint32_t data = ((uint32_t)type << 24) | ((uint32_t)device << 16) | info;
-	rp2040.fifo.push(data);
-}
-
-/*
-// Function to pack data into a single uint32_t for FIFO transport
-uint32_t packData(uint8_t type, uint8_t device, uint16_t info) {
-	return ((uint32_t)type << 24) | ((uint32_t)device << 16) | info;
-}
-*/
-
-// Function to unpack data from a single uint32_t for FIFO transport
-void unpackData(uint32_t data, char& type, uint8_t& device, uint16_t& info) {
-	type = static_cast<char>((data >> 24) & 0xFF);
-	device = (data >> 16) & 0xFF;
-	info = data & 0xFFFF;
-}
-
 // Power On/Off unused devices
 void Power_c1(bool power) {
 
-	// Power ON
-	if (power) {
-		digitalWrite(DRIVER_ENABLE, LOW);	// Enable Driver
-		digitalWrite(VV_EN, HIGH);			// Enable 5V
-	}
+	// Default power state is ON since power is set ON at setup.
+	static bool prevPower = true;
 
-	// Power OFF
-	else {
-		digitalWrite(DRIVER_ENABLE, HIGH);	// Disable Driver
-		digitalWrite(VV_EN, LOW);			// Disable 5V
+	if (power != prevPower) {
+		if (power) {
+			digitalWrite(DRIVER_ENABLE, LOW);	// Enable Driver
+			digitalWrite(VV_EN, HIGH);			// Enable 5V
+		}
+		else {
+			digitalWrite(DRIVER_ENABLE, HIGH);	// Disable Driver
+			digitalWrite(VV_EN, LOW);			// Disable 5V
+		}
+		prevPower = power;
 	}
 }
 
@@ -535,6 +774,16 @@ void Power_c1(bool power) {
 
 		}
 		digitalWrite(DRIVER_ENABLE, HIGH);			  // Disable Driver
+
+		
+		// Function to pack data into a single uint32_t for FIFO transport
+		uint32_t packData(uint8_t type, uint8_t device, uint16_t info) {
+		return ((uint32_t)type << 24) | ((uint32_t)device << 16) | info;
+		}
+
+		delay(250);
+		Serial.print("UNITS: ");
+		Serial.println(Scale_0.Measure());
 
 
 		*/

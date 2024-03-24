@@ -29,12 +29,17 @@ public:
 
 	byte SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tcool, byte step_pin, byte dir_pin, byte limit_pin, byte diag_pin, float stepper_accel);
 	byte SetupScale(uint8_t nvmAddress, uint8_t dataPin, uint8_t clockPin);
+	byte Prime();
+	byte MoveCycle();
+	byte MoveCycleAccurate();
 	byte HomeMotor();
-	byte AutotuneStall(bool quickCheck);
+	byte EmptyScale();
+	bool MoveTo(long position);
+	byte AutotuneStall(bool quickCheck, bool saveToFile);
 	byte CheckError();
 	byte CheckWarning();
-	float Measure();
-	float CalibrateScale();
+	float Measure(byte measurments);
+	byte CalibrateScale(bool serialResult);
 
 	//TESTING - DELETE LATER
 	void MotorTest(bool moveUP);
@@ -44,12 +49,14 @@ private:
 
 	// private functions
 	byte ManageError(byte error_code);
+	bool timerDelay(unsigned int delayTime);
 
 	// private members
 	SpeedyStepper4Purr StepperMotor;
 	TMC2209Stepper StepperDriver;
 	HX711 Scale;
 
+	// Variables
 	byte _MotorNumber;
 	MCP23017& mcp;
 	long _std_distance;						// Standard range (steps) the slider should moves when feeding
@@ -61,6 +68,17 @@ private:
 	bool _use_expander;						// Use MCP23017 for endstop
 	byte _mcp_INTA;							// INTA pin for MCP23017
 	byte _nvmAddress;						// Address for saving calibration data
+	bool iAmScale;							// Automatically set true when SetupScale() is called.
+
+
+	// FLAGS
+	bool expander_endstop_signal;
+	unsigned long startTime;
+
+	// STATES
+	byte homing_result;
+	byte primeStatus;
+	byte calState;
 
 	// Syntax for function returns
 	enum ReturnCode : byte {
@@ -69,6 +87,14 @@ private:
 		ERROR,
 		WARNING
 	};
+
+	// Homing States
+	enum HomingState {
+		START,
+		HOMING,
+		DONE,
+		HOME_ERROR
+	}; HomingState homingState;
 
 	// Error and Warning Codes
 	enum ErrorCode : byte {
@@ -85,9 +111,19 @@ private:
 		STEPPER_FREEDRIVE,
 		STEPPER_ENDSTOP,
 		STEPPER_STALL,
-		SCALE_CALFILE
+		SCALE_CALFILE,
+		STALL_CALFILE
 	}; WarningCode Warning;
 
+	enum CalibrationCode : byte {
+		WAITING,
+		TARE,
+		PLACE_WEIGHT,
+		CALIBRATING,
+		SAVEING_CALIBRATION,
+		FINISHED,
+		CALIBRATION_ERROR
+	}; CalibrationCode Calibration;
 
 };
 
