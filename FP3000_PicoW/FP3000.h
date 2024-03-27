@@ -13,11 +13,11 @@
 #define _FP3000_h
 
 #include <Arduino.h>
-#include <SpeedyStepper4Purr.h>
+#include "src/SpeedyStepper4Purr.h"
 #include <TMCStepper.h>
 #include <MCP23017.h>
 #include <HX711.h>
-#include "LittleFS.h"
+#include <LittleFS.h>
 
 class FP3000 {
 
@@ -40,6 +40,7 @@ public:
 	byte CheckWarning();
 	float Measure(byte measurments);
 	byte CalibrateScale(bool serialResult);
+	void EmergencyMove(uint16_t eCurrent, byte eCycles);
 
 	//TESTING - DELETE LATER
 	void MotorTest(bool moveUP);
@@ -70,15 +71,12 @@ private:
 	byte _nvmAddress;						// Address for saving calibration data
 	bool iAmScale;							// Automatically set true when SetupScale() is called.
 
-
-	// FLAGS
-	bool expander_endstop_signal;
-	unsigned long startTime;
-
-	// STATES
+	// States / Flags / Variables
 	byte homing_result;
 	byte primeStatus;
 	byte calState;
+	bool expander_endstop_signal;
+	unsigned long startTime;
 
 	// Syntax for function returns
 	enum ReturnCode : byte {
@@ -103,7 +101,8 @@ private:
 		STEPPER_UNKOWN,
 		STEPPER_JAMMED,
 		SCALE_CONNECTION,
-		FILE_SYSTEM
+		FILE_SYSTEM,
+		FEED_CYCLES
 	}; ErrorCode Error;
 
 	enum WarningCode : byte {

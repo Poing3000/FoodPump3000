@@ -1,7 +1,7 @@
 /*
  * Name:	FoodPump3000
  * Author:	Poing3000
- * Status:	Dev
+ * Status:	ALPHA
  *
  * Description:
  * This code is for the cat food pump, also called Futterpumpe or FoodPump3000.
@@ -18,8 +18,6 @@
  * 3 = WARNING
  * >> Warnings and Errors can be checked via function "CheckError() / CheckWarning()".
  * 
- * Updates - DEV:
- * [ ] - [...]
 */
 
 #include "Arduino.h"
@@ -67,6 +65,7 @@ byte FP3000::SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tco
 
 	// Set Up Driver
 	// (Check TMC2209Stepper.h for more details on the functions and settings)
+	
 	StepperDriver.begin();						// Start driver
 	StepperDriver.toff(4);						// Not used, but required to enable the motor
 	StepperDriver.blank_time(24);				// Recommended blank time
@@ -81,6 +80,7 @@ byte FP3000::SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tco
 	StepperDriver.semin(0);						// Turn off CoolStep.
 	StepperDriver.en_spreadCycle(false);		// Turn off SpreadCycle
 	StepperDriver.pdn_disable(true);			// Enable UART
+	
 
 	// Set Up Stepper
 	StepperMotor.connectToPins(step_pin, dir_pin, limit_pin, diag_pin);
@@ -270,8 +270,9 @@ byte FP3000::MoveCycle() {
 	// =================================================================================================================================
 	// This function performs one movement cycle:
 	// Basically, this moves once away from the endstop position by the standard distance (_std_distance) and will return back to the
-	// endstop position. The function will return 0 while it is busy, 1 when the cycle is finished, and 3 for warning (NO error). The
-	// warning is only trigger in case a stall is detected during the movement cycle.
+	// endstop position. The function will return 0 while it is busy, 1 when the cycle is finished, 2 for error, and 3 for warning. The
+	// warning is only trigger in case a stall is detected during the movement cycle. An error is triggered after an abnormal
+	// amount of feed cycles (10) have be done without success (no food dispensed).
 	// WARNING, this function should only be called when the motor is homed! FP3000 cannot see e.g. if the motor has been turned off.
 	//			This function assumes a homed status! Accordingly it is recommended to call this function after the Prime() function.
 	// NOTE, the direction (UP/DOWN) for the scale dumpper is already inverted in the MotorUpDown() function.
@@ -301,6 +302,7 @@ byte FP3000::MoveCycle() {
 	// If so, return OK (one cyle finished) if there was no stall detected (WARNING).
 	currentPosition = StepperMotor.getCurrentPositionInSteps();
 	if (currentPosition == homePosition && moveResult){
+		
 		if (StepperMotor.checkStall()) {
 			Warning = STEPPER_STALL;
 			Warning = STEPPER_STALL;
@@ -311,7 +313,6 @@ byte FP3000::MoveCycle() {
 		
 		}
 	}
-
 	return BUSY;
 }
 
@@ -355,6 +356,7 @@ byte FP3000::MoveCycleAccurate() {
 	// Update currentPosition and check if move cylce is finished.
 	// If so, return OK (one cyle finished) if there was no stall detected (WARNING).
 	if (moveResult == true) {
+
 		if (StepperMotor.checkStall()) {
 			Warning = STEPPER_STALL;
 			Warning = STEPPER_STALL;
@@ -560,7 +562,7 @@ byte FP3000::AutotuneStall(bool quickCheck, bool saveToFile) {
 		// QUICK CHECK SETTINGS
 		_stall_val = 100;
 		factor = 0.1;
-		stepFactor = 0.1;
+		stepFactor = 0.05;
 		checkStep = 10;
 	}
 	else {
@@ -785,7 +787,6 @@ byte FP3000::CalibrateScale(bool serialResult) {
 	// ---------------------------------------------------------------------------------------------------------------------------------
 
 
-
 	// Save calibration to file
 	// ---------------------------------------------------------------------------------------------------------------------------------
 	if (readyToSafe) {
@@ -828,30 +829,49 @@ byte FP3000::CalibrateScale(bool serialResult) {
 }
 
 
-/*
-// Approximate Filling
-void FP3000::ApproximateFill(byte appr_amount) {
+void FP3000::EmergencyMove(uint16_t eCurrent, byte eCycles) {
 
+	// =================================================================================================================================
+	// This is to move the motor in case of an emergency:
+	// The function will, deping if its a scale or pump motor, move the motor and perform ten feed cycles, in hope to dispense some
+	// food. In case of a scale motor, it will be tried to move the motor away from the endstop position in order to not block
+	// dispensing. In case of a pump motor, it will be tried to perform ten feed cycles in hope to dispense some food.
+	// WARNING, calling this function may wear out the hardware and can cause permanent damage. This function should only be used in
+	// case of an emergency. This functions will be the last resort to dispense food in case of a failure.
+	// NOTE, EmergencyMove() expects the current to be set. This can be used to increase the current for the emergency move.
+	// NOTE, EmergencyMove() expects the cycles to be set. This defines roughly the amount of food to be dispensed.
+	// NOTE, the default stepper speed will be halfed automatically. NOTE, this function is BLOCKING. 
+	// =================================================================================================================================
+
+	// Set emergency current and speed
+	StepperDriver.rms_current(eCurrent);	// Sets the current in milliamps.
+	StepperMotor.setSpeedInStepsPerSecond(_stepper_speed / 4);
+
+	// Check if it is a scale or pump motor
+	if (iAmScale) {
+		// First move a bit towards the endstop (could help to unblock)
+		StepperMotor.moveRelativeInSteps(_std_distance * 0.2 * _dir_home);
+		
+		// Move scale motor away from endstop, with 20% extra distance
+		StepperMotor.moveRelativeInSteps(_std_distance * 1.2 * (-1) * _dir_home);
+	}
+	else {
+		// First move a bit away from the endstop (could help to unblock)
+		StepperMotor.moveRelativeInSteps(_std_distance * 0.2 * (-1) * _dir_home);
+
+		// Move to the endstop position, plus 20% extra distance
+		StepperMotor.moveRelativeInSteps(_std_distance * 1.2 * _dir_home);
+
+		// Perform ten feed cycles
+		// Note that the movent uses 20% extra distance
+		// If there is a blockage this will wear out the hardware quickly
+		for (int i = 0; i < eCycles; i++) {
+			StepperMotor.moveRelativeInSteps(_std_distance * 1.2);
+			StepperMotor.moveRelativeInSteps(-_std_distance * 1.2);
+		}
+	}
 }
 
-*/
-
-/*
-// Accurate Filling
-void FP3000::AccurateFill(byte accu_amount) {
-
-*/
-
-
-/*
-// Pump Food
-void FP3000::PumpFood(byte fill_amount) {
-
-	// TODO: Function for Approximate filling
-
-	// TODO: Funtion for Accurate filling
-}
-*/
 
 // END OF PUBLIC FUNCTIONS+++++++++++++++++++++++++++++++++++
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -955,8 +975,6 @@ bool FP3000::timerDelay(unsigned int delayTimeInSeconds) {
   // If delayTime seconds haven't passed yet, return false
   return false;
 }
-
-
 
 // END OF PRIVATE FUNCTIONS++++++++++++++++++++++++++++++++++
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

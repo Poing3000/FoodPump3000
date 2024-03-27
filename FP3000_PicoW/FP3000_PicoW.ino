@@ -15,65 +15,28 @@
  *		[x] - Find endstop with Stall
  *		[x] - Use IR as default homing sensor (later use stall as backup and for error management).
  *		[x] - Implement own homing function (error management/stall detection) >> SEE SpeedyStepper4Purr.h
- * [ ] - Approx. filling
- * [ ] - Accurate filling
- * [ ] - TMC2209 Prime with IR Sensor check
- * [ ] - Calibrate with IR Sensor
- * [ ] - Error Management:
+ * [x] - Approx. filling
+ * [x] - Accurate filling
+ * [x] - TMC2209 Prime with IR Sensor check
+ * [x] - Calibrate with IR Sensor
+ * [X] - Error Management:
  *    [x] - Detect Calibration Error (dif. IR vs Stall)
- *    [ ] - Handle unexpected Stall
- *    [ ] - EMGY Mode
- * [ ] - Comunicate
- * [ ] - Handle/implement multicore. >> Comunication on Core 0, Motor on Core 1.
+ *    [x] - EMGY Mode
+ * [x] - Comunicate (Serial only)
+ * [x] - Handle/implement multicore. >> Comunication on Core 0, Motor on Core 1.
  * [x] - Implement multible pumps control.
- * [ ] - Make libraries local (past in repository and change from #include <LibraryFile.h>  to "LocalFile.h")
  *
  * [ ] - *Future wish: Use RP2040 PIO for Stepper control.
  *
- *
- * >> Notes: Aktuell bei der Implementierung der ErrorHandling Funktion. Diese funktioniert aber noch nicht. Problem mit Switch/Case?
- *
- * DEBUG CODES:
- * ----------------------------------------------------------
- * Status Codes (S):
- * [...]
- *
- * Error Codes	(E):
- * 1 - Homing Error, Endstop not found.
- *
- * Warning Codes (W):
- * 1 - Stall detected.
- * 2 - Homing successful at 2nd try.
- *
- * -- Status/Error/Warning sytnax ---
- * E		0			0
- * ^		^			^
- * Type		Device		Info/Problem
- * ==========================================================
  */
-
-
- // Parts for individual configuration are highlited below.
- // ----------------------------------------------------------
- // 
- // CONFIGURATION:
- // ----------------------------------------------------------
- // Libraries
-	// Stepper
+ 
+// CONFIGURATION:
+// ----------------------------------------------------------
+// Libraries
 #include "FP3000.h"
 #include <Wire.h>
-
-// Debugging
 #include <Arduino_DebugUtils.h>
-
-// Local Functions
-// [...]
 // ---------------------------------*
-
-
-// Variables CORE 0
-	//TODO: CHECK IF NEEDED / CAN BE USED LOCALY
-const int Feed_Range_c0 = 4600;	// Typical feeding distance
 
 // Debugging
 #define DEBUG_LEVEL DBG_VERBOSE	//Set desired debug level
@@ -87,9 +50,6 @@ const int Feed_Range_c0 = 4600;	// Typical feeding distance
 	Further info at: https://github.com/arduino-libraries/Arduino_DebugUtils
 	------------------------------------
 	*/
-
-//END CORE 0 ---------------------------------*
-
 
 // Stepper Settings
  
@@ -105,10 +65,11 @@ const int Feed_Range_c0 = 4600;	// Typical feeding distance
 #define HOME_STALL_VALUE	0			// Stall threshold for homing [0..255] (lower = more sensitive) >> use AutotuneStall(bool quickCheck) to find the best value. Set to 0 if you want stall values loaded from file.
 #define MIRCO_STEPS			32			// Set microsteps (32 is a good compromise between CPU load and noise)
 #define TCOOLS				400			// max 20 bits
+#define EMGY_CURRENT		1000		// Emergency current (mA) (default 1000mA)
+
 
 // Stepper Motor (NEMA 17)
 #define SPEED				10000		// Speed (steps/s) (10000 is good)
-//#define SPEED				1000		// DELTE LATER! TESTING ONLY
 #define ACCEL				100000		// Acceleration (steps/s^2) (100000	is good)
 #define STD_FEED_DIST		4600		// Standard range (steps) the slider should moves when feeding (4600 is good)
 #define	PUMP_MAX_RANGE		6000		// Max range (steps) the slider can move inside the pump (6000 is good)
@@ -121,7 +82,7 @@ const int Feed_Range_c0 = 4600;	// Typical feeding distance
 #define	LIMIT_0				99			// Limit switch pin (via expander MCP23017)
 #define	DIAG_0				3			// DIAG pin for stall detection
 #define	DRIVER_ADDRESS_0	0b00		// Drivers address (0b01: MS1 is LOW and MS2 is HIGH)			
-#define DIR_TO_HOME_0			1			// Direction to home (1 = CW, -1 = CCW)
+#define DIR_TO_HOME_0		1			// Direction to home (1 = CW, -1 = CCW)
 
 // Stepper Motor 1
 #define MOTOR_1				1			// Unique device number
@@ -148,8 +109,19 @@ const int Feed_Range_c0 = 4600;	// Typical feeding distance
 #define	EXPANDER			true		// Use expander (true) or not (false)
 
 // Other Settings
-#define APP_OFFSET			4			// Offset in g for approx. feeding
+#define APP_OFFSET			4.0			// Offset in g for approx. feeding (default 4g)
+#define EMGY_CYCLES			4			// Feeding cycles in EMGY mode (no measuring etc.) (default 4)
  
+//---------------------------------*
+
+// FoodPump Modes
+enum FPMode : byte {
+	IDLE,
+	FEED,
+	CALIBRATE,
+	AUTOTUNE,
+	EMGY
+};
 //---------------------------------*
 
 // Port Expander
@@ -173,13 +145,14 @@ FP3000 Pump_1(MOTOR_1, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_1, SPEED, STAL
 // END OF CONFIG+++++++++++++++++++++++++++++++++++++++++++++
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+
 // SETUP - CORE 0:
 void setup() {
 
 	// Debugging
 	Debug.setDebugLevel(DEBUG_LEVEL);
 	if (Debug.getDebugLevel() >= 0) {	// Give time to open serial monitor
-		delay(200);					
+		delay(500);					
 	}
 	//---------------------------------*
 
@@ -266,39 +239,59 @@ void setup1() {
 	
 	// Setup finished
 	digitalWrite(LED_BUILTIN, HIGH);  // Visual indication that hardware setup is finished
+
 }
-
-
 // END OF SETUP++++++++++++++++++++++++++++++++++++++++++++++
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 
 // MAIN PROGRAM (LOOP):
 	// CORE 0
 void loop() {
 
-	// TESTING - DELETE LATER
-	// CHECKING FOR DATA FROM CORE 1
-	while (!PopAndDebug_c0());
+	// EXAMPLE CORE 0 LOOP
+	// Shows basic functionality of communication between Core 0 and Core 1.
+	// And allows to send commands to Core 1 via Serial Monitor, and receive data from Core 1.
+	// ------------------------------------------------------------------------------------------------- 
 
+	// Print User Input Message one
+	static bool printMessage = true;
+	if (printMessage) {
+		DEBUG_DEBUG("Enter command letter: 0 - IDLE, 1 - FEED, 2 - CALIBRATE, 3 - AUTOTUNE, 4 - EMGY");
+		printMessage = false;
+	}
+
+	// Checking for data for Core 1
+	if(Serial.available() > 0) {
+		uint16_t userInput = Serial.parseInt();
+		if (userInput == FEED) {
+			Serial.println("Enter feeding amount: ");
+			while (Serial.available() == 0);
+			float feedingAmount = Serial.parseFloat();
+			// 99 - no specific device, just a placeholder (can be in case of multiple Pumps)
+			PackPushData('F', 99, floatToUint16(feedingAmount));
+		}
+		else {
+			PackPushData(userInput);
+		}
+		//printMessage = true;
+	}
+	else {
+		PopAndDebug_c0();
+	}
+	// -------------------------------------------------------------------------------------------------
 }
 
 // CORE 1
 void loop1() {
 	
 	// Variables
-	//-------------------------------------------------------------
+	// ----------------------------------------------------------------------------------------------------
+
 	// The Core 1 loop switches between different operating modes.
 	// The mode is set by Core 0. Default is IDLE.
-	enum Mode : byte {
-		IDLE,
-		FEED,
-		CALIBRATE,
-		AUTOTUNE,
-		EMGY
-	};
 	static byte Mode_c1 = IDLE;
-	//static byte Mode_c1 = CALIBRATE; // DELETE
-
+	
 	// Syntax for function returns
 	enum ReturnCode : byte {
 		BUSY,
@@ -318,39 +311,57 @@ void loop1() {
 	};
 	static byte feedMode = PRIME;
 
-	// TODO ADAPT FEEDING AMOUNT / RECEICE FROM CORE 0
-	// Feeding Amount
-	float feedAmount = 10;
-
 	// Calibration Status
 	byte calStatus = 0;
 	byte prevCalStatus = 1;
-	//-------------------------------------------------------------
 
-	// Operating Modes
+	// Feeding Amount in g (default 10g)
+	static float feedingAmount_1 = 10.0;
+
+	// Feeding Cycles (checks for empty scale)
+	static byte feedCycles = 0;
+
+	// ---------------------------------------------------------------------------------------------------*
+
+	// Operation Mode Settings
+	// ----------------------------------------------------------------------------------------------------
+
+	// Set Mode (and if available feeding amount) - from Core 0
+	PopData_c1(Mode_c1, feedingAmount_1);
+
+	// Check if Mode_c1 is in its allowed range and send to Core 0 if changed.
+	static byte oldMode_c1 = 99; // force sending at start
+	if (Mode_c1 > EMGY) {
+		// Unexpected Mode set, go to IDLE
+		PackPushData('W', 99, 6); // 99 - no device, 6 - invalid mode)
+		Mode_c1 = IDLE;
+	} 
+	else if (Mode_c1 != oldMode_c1) {
+		PackPushData('S', 99, Mode_c1);
+		oldMode_c1 = Mode_c1;
+	}
+	// ---------------------------------------------------------------------------------------------------*
+
+	// MAIN OPERATING MODES - CORE 1
 	switch (Mode_c1) {
+	// ----------------------------------------------------------------------------------------------------
+
 	case IDLE:
 
 		// ===============================================================
-		// IDLE Mode is the default mode, where the device is waiting for
+		// IDLE Mode is the default mode, where the device just waits for
 		// commands from Core 0.
 		// ===============================================================
 
 		// Power Off unused devices
 		Power_c1(false);
 
-
-		// DELETE - TESTING
-		Mode_c1 = FEED; // DELETE
-		
-
-
-		// Check sensors once in a while
-
-		// Communicate with Core 0, receive operating mode.
-
+		// Reset Feed Mode
+		feedMode = PRIME; // Reset feeding mode
 
 		break;
+	// ----------------------------------------------------------------------------------------------------
+
 	case FEED:
 
 		// ===============================================================
@@ -371,9 +382,9 @@ void loop1() {
 		// feeding command.)
 		// ===============================================================
 
-		//TODO: IMPLEMENT ERROR HANDLING - MAX CYCLES
-
 		switch (feedMode) {
+		// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 		case PRIME:
 			// Turn on power
 			Power_c1(true);
@@ -385,7 +396,6 @@ void loop1() {
 					ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
 				}
 			}
-
 
 			// Wait for Scale to finishe, then Prime Pump
 			else if (pumpReturn == BUSY) {
@@ -403,36 +413,59 @@ void loop1() {
 				feedMode = APPROX;
 			}
 			break;
+		// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 		case APPROX:
 			// Do one cycle, then check if the desired amount
 			// (APP_OFFSET) is reached. If not, do another cycle.
 			if (Pump_1.MoveCycle() != BUSY) {
-				if (Scale_0.Measure(2) >= feedAmount - APP_OFFSET) {
+				if (Scale_0.Measure(2) >= feedingAmount_1 - APP_OFFSET) {
+					feedCycles = 0; // Reset feed cycles
 					feedMode = ACCURATE;
 				}
-				// Check if there was something to warn about (stall).
-				ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
+				else {
+					feedCycles++;
+					if (feedCycles >= 10) {
+						feedCycles = 0; // Reset feed cycles
+						// Switch to emergency feeding
+						Mode_c1 = EMGY;
+					}
+				}
 			}
-
 			break;
+		// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 		case ACCURATE:
 			// Accurate
 			if (Pump_1.MoveCycleAccurate() != BUSY) {
-				if (Scale_0.Measure(3) >= feedAmount) {
+				if (Scale_0.Measure(3) >= feedingAmount_1) {
 					
 					// Return slider back to home position and do final measurement
 					if (Pump_1.MoveTo(0) != BUSY) {
 						
 						// Do Final Measurement and send data to Core 0
 						// (Uses floatToUint16 to convert measured float to uint16_t)
-						PackPushData('M', SCALE_1, floatToUint16(Scale_0.Measure(7)));
+						PackPushData('A', SCALE_1, floatToUint16(Scale_0.Measure(7)));
 						
+						// Reset feed cycles
+						feedCycles = 0;
+
 						// Go to next mode
 						feedMode = EMPTY;
 					}
 				}
+				else {
+					feedCycles++;
+					if (feedCycles >= 100) {
+						feedCycles = 0; // Reset feed cycles
+						// Switch to emergency feeding
+						Mode_c1 = EMGY;
+					}
+				}
 			}
 			break;
+		// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 		case EMPTY:
 			// Return slider back to home position
 			if (Pump_1.MoveTo(0) != BUSY) {
@@ -443,14 +476,14 @@ void loop1() {
 					ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
 					ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
 					
-					// Back to IDLE
-					Mode_c1 = IDLE;
+					Mode_c1 = IDLE; // Back to IDLE
 				}
 			}
 			break;
+		// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*
 		}
 		break;
-
+	// ----------------------------------------------------------------------------------------------------
 	case CALIBRATE:
 
 		// ===============================================================
@@ -490,6 +523,7 @@ void loop1() {
 		Mode_c1 = IDLE;
 
 		break;
+	// ----------------------------------------------------------------------------------------------------
 	case AUTOTUNE:
 
 		// ===============================================================
@@ -504,55 +538,72 @@ void loop1() {
 		// NOTE, stall values will be read from NVM if STALL_VALUE /
 		// HOME_STALL_VALUE is set to 0. E.g. if only STALL_VALUE is set
 		// to 0, only this will be read from NVM, but not for homeing.
+		// NOTE, this is blocking code! If there is an error (stuck in
+		// loop etc.), then only a restart will help.
 		// ===============================================================
 
 		// Turn on power
-		Power_c1(false);
+		Power_c1(true);
 		
 		// Autotune Stall
 		// (true/true for quick check and save to file)
-		Scale_0.AutotuneStall(true, true);
-		ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
-
+		while (Pump_1.HomeMotor() == BUSY);
 		Pump_1.AutotuneStall(true, true);
 		ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
+
+		while (Scale_0.HomeMotor() == BUSY);
+		Scale_0.AutotuneStall(true, true);
+		ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
 
 		// Turn off power
 		Power_c1(false);
 
+		// Back to IDLE
+		Mode_c1 = IDLE;
+
+		break;
+	// ----------------------------------------------------------------------------------------------------
 	case EMGY:
-		// [...]
-		//TODO: Function, Emergency Mode
-		break;
-	default:
-		// Unexpected Mode, go to EMGY
-		Mode_c1 = EMGY;
+		
+		// Perform one emergency feeding
+		// ===============================================================
+		// WARNING, calling this function to often can wear out the
+		// hardware and can cause permanent damage - especially in case of
+		// a real blockage. This function  should only be called in case
+		// of an emergency. 
+		// NOTE, EmergencyMove() expects the current to be set. This can
+		// be used to increase the current for the emergency move.
+		// NOTE, EmergencyMove() expects the cycles to be set. This
+		// defines roughly the amount of food to be dispensed.
+		// NOTE, the default stepper speed will be halfed automatically.
+		// NOTE, this is blocking code.
+		// ===============================================================
+
+		// Turn on power
+		Power_c1(true);
+
+		// Emergency Move
+		Scale_0.EmergencyMove(EMGY_CURRENT, EMGY_CYCLES);
+		Pump_1.EmergencyMove(EMGY_CURRENT, EMGY_CYCLES);
+
+		// Turn off power
+		Power_c1(false);
+
+		// Back to IDLE
+		Mode_c1 = IDLE;
+
 		break;
 	}
-
-	// Send mode (Status) to Core 0, if changed
-	static byte oldMode_c1 = 99; // force sending first status
-	if (Mode_c1 != oldMode_c1) {
-		PackPushData('S', 99, Mode_c1);
-		oldMode_c1 = Mode_c1;
-	}
-
-
-	//---------------------------------*
+	// ---------------------------------------------------------------------------------------------------*
 }
-
 // END OF MAIN PROGRAM+++++++++++++++++++++++++++++++++++++++
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 // SUPPORT FUNCTIONS:
 
-
-// Feeding Function
-
-
-
 // Function to receive warnings and errors
+// ----------------------------------------------------------------------------------------------------
 void ReceiveWarningsErrors_c1(FP3000 &device, byte deviceNumber) {
 
 	byte type;
@@ -573,43 +624,73 @@ void ReceiveWarningsErrors_c1(FP3000 &device, byte deviceNumber) {
 		PackPushData(type, deviceNumber, info_E);
 	}
 }
+// ---------------------------------------------------------------------------------------------------*
 
-// Function to pack and push data
+
+// Function to pack and push data for Core 0
+// ----------------------------------------------------------------------------------------------------
 void PackPushData(uint8_t type, uint8_t device, uint16_t info) {
 	uint32_t data = ((uint32_t)type << 24) | ((uint32_t)device << 16) | info;
 	rp2040.fifo.push(data);
 }
+// ---------------------------------------------------------------------------------------------------*
+ 
+
+// Function to only send a mode command to Core 1 (overload PackPushData)
+// ----------------------------------------------------------------------------------------------------
+void PackPushData(uint16_t info){
+	// M = Mode, (99 = no device), info = Mode to set
+	PackPushData('M', 99, info);
+}
+// ---------------------------------------------------------------------------------------------------*
+
 
 // Function to unpack data from a single uint32_t for FIFO transport
+// ----------------------------------------------------------------------------------------------------
 void unpackData(uint32_t data, char& type, uint8_t& device, uint16_t& info) {
 	type = static_cast<char>((data >> 24) & 0xFF);
 	device = (data >> 16) & 0xFF;
 	info = data & 0xFFFF;
 }
+// ---------------------------------------------------------------------------------------------------*
+
 
 // Function to save float measurements to uint16_t
+// ----------------------------------------------------------------------------------------------------
 uint16_t floatToUint16(float value) {
 	value = value * 100;
 	uint16_t uValue = static_cast<uint16_t>(value);
 	return uValue;
 }
+// ---------------------------------------------------------------------------------------------------*
+
 
 // Function convert data uint16_t to float
+// ----------------------------------------------------------------------------------------------------
 float uint16ToFloat(uint16_t value) {
 	float fValue = static_cast<float>(value);
 	fValue = fValue / 100.0;
 	return fValue;
 }
+// ---------------------------------------------------------------------------------------------------*
+
 
 // Function to pop and debug data from Core 1
-// Returns true if data was popped and provides debug messages
-bool PopAndDebug_c0() {
+// ----------------------------------------------------------------------------------------------------
+void PopAndDebug_c0() {
+
+	// ===============================================================
+	// Returns true if data was popped and provides debug messages
+	// NOTE, any ERROR will trigger EMGY mode right away. Thus if 
+	// an error is detected, the device will stop working and and
+	// transit into an emergency mode (Do one EMGY dispense and
+	// then wait for further instructions).
+	// ===============================================================
 
 	char type;
 	uint8_t device;
 	uint16_t info;
 	uint32_t data;
-	bool popped = false;
 
 	// Status Codes Messeages
 	// ==========================================================
@@ -617,6 +698,7 @@ bool PopAndDebug_c0() {
 	  "Standby",
 	  "Feeding",
 	  "Calibrating",
+	  "Autotuning",
 	  "EMERGENCY FEEDING"
 	};
 
@@ -628,7 +710,9 @@ bool PopAndDebug_c0() {
 	  "Stepper unknown error",
 	  "Stepper jammed",
 	  "Scale connection error",
-	  "File system error"
+	  "File system error",
+	  "Empty or scale broken",
+	  "Core 1 FIFO error"
 	};
 	// =========================================================*
 
@@ -640,7 +724,8 @@ bool PopAndDebug_c0() {
 	  "Endstop defective",
 	  "Stall detected",
 	  "Not calibrated",
-	  "Stall value not set"
+	  "Stall value not set",
+	  "Invalid Mode Setting Received"
 	};
 	// =========================================================*
 
@@ -669,7 +754,7 @@ bool PopAndDebug_c0() {
 			if (type == 'S') {
 				DEBUG_DEBUG("%s", STATUS_MESSAGES[info]);
 			}
-			else if (type == 'M') {
+			else if (type == 'A') {
 				float finfo = uint16ToFloat(info);
 				DEBUG_DEBUG("Scale (device#) %d: %.2fg", device, finfo);
 			}
@@ -683,17 +768,65 @@ bool PopAndDebug_c0() {
 				DEBUG_ERROR("ERROR Device: %d, %s", device, ERROR_MESSAGES[info]);
 				// TODO: Implement EMGY Mode
 			}
-			popped = true;
 		}
 		else {
 			// This would be an unexpected error.
-			DEBUG_WARNING("Error while popping data from Core 1");
+			DEBUG_WARNING("Core 0 FIFO error");
 		}
 	}
-	return popped;
 }
+// ---------------------------------------------------------------------------------------------------*
+ 
+
+// Function to pop data from Core 0
+// ----------------------------------------------------------------------------------------------------
+void PopData_c1(byte &modeToSet, float &amountToFeed) {
+	
+	char type;
+	uint8_t device;
+	uint16_t info;
+	uint32_t data;
+	bool recError = false;
+
+	// Check if data is available
+	int dataCount = rp2040.fifo.available();
+
+	for (int i = 0; i < dataCount; i++) {
+		if (rp2040.fifo.pop_nb(&data)) {
+
+			// Unpack data from FIFO
+			unpackData(data, type, device, info);
+
+			// Receive commands from Core 0
+			if (type == 'M') {	// Reveice mode
+				modeToSet = static_cast<byte>(info);
+			}
+			else if (type == 'F') {	// Receive feeding amount
+				modeToSet = FEED;
+				amountToFeed = uint16ToFloat(info);
+			}
+			else {
+				// Unexpected data (FIFO error)
+				recError = true;
+			}
+		}
+		else {
+			// Unexpected FIFO error
+			recError = true;
+		}
+	}
+
+	if(recError) {
+		// This is for an unexpected error.
+		// 99 - only a placeholder, 7 - FIFO error
+		PackPushData('E', 99, 7);
+	}
+}
+// ---------------------------------------------------------------------------------------------------*
+
 
 // Power On/Off unused devices
+// ----------------------------------------------------------------------------------------------------
 void Power_c1(bool power) {
 
 	// Default power state is ON since power is set ON at setup.
@@ -711,79 +844,7 @@ void Power_c1(bool power) {
 		prevPower = power;
 	}
 }
+// ---------------------------------------------------------------------------------------------------*
 
-// Code Dump / Templates - DELTE:
-		/*
-		// DELETE - TESTING ONLY: Move Home
-		bool home_test = false;
-		byte home_result = 0;
-		byte error_result = 0;
-		while (1) {
-			home_result = stepper_1.moveToHome(-1, SPEED, MAX_RANGE, true);
-
-			if (home_result > 0) {
-				if (home_result >= 2) {
-					DEBUG_VERBOSE("Error occured");
-					if ((stepper_1.ErrorHandling(1, home_result, SPEED, MAX_RANGE) == 0)) {
-						//HOME AGAIN
-					}
-					else {
-						//EMGY
-					}
-				}
-
-				DEBUG_VERBOSE("error_result: %d", error_result);
-			break;
-			}
-		} DEBUG_VERBOSE("home_result: %d", home_result);
-		*/
-
-
-		/*
-		* 	printDeviceStatus("Scale", Scale_0);
-		*   printDeviceStatus("Pump", Pump_1);
-		* 
-		* 
-		void printDeviceStatus(const String &deviceName, FP3000 &device) {
-			Serial.println(deviceName + " Error Status: " + String(device.CheckError()));
-			Serial.println(deviceName + " Warning Status: " + String(device.CheckWarning()));
-		}
-		*/
-
-		// DELETE TESING
-		/*
-		Serial.print("New Autotune Stall Result for Scale_0: ");
-		Serial.println(Scale_0.AutotuneStall(true));
-		Serial.print("New Autotune Stall Result for Pump_1: ");
-		Serial.println(Pump_1.AutotuneStall(true));
-		//Scale_0.AutotuneStall(true);
-		//Pump_1.AutotuneStall(true);
-
-
-				while (1) {
-
-
-			//delay(100);
-			Scale_0.MotorTest(false);
-			Pump_1.MotorTest(true);
-			//mcp.setPin(0, B, HIGH);
-			//delay(100);
-			Scale_0.MotorTest(true);
-			Pump_1.MotorTest(false);
-			//mcp.setPin(0, B, LOW);
-
-		}
-		digitalWrite(DRIVER_ENABLE, HIGH);			  // Disable Driver
-
-		
-		// Function to pack data into a single uint32_t for FIFO transport
-		uint32_t packData(uint8_t type, uint8_t device, uint16_t info) {
-		return ((uint32_t)type << 24) | ((uint32_t)device << 16) | info;
-		}
-
-		delay(250);
-		Serial.print("UNITS: ");
-		Serial.println(Scale_0.Measure());
-
-
-		*/
+// END OF SUPPORT FUNCTIONS+++++++++++++++++++++++++++++++++
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
