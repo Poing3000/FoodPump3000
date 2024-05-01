@@ -31,7 +31,7 @@ FP3000::FP3000(byte MotorNumber, long std_distance, long max_range, long dir_hom
 	: StepperMotor(MotorNumber), StepperDriver(&serial, driver_rsense, driver_address), mcp(mcpRef) {
 
 	// Remember settings
-	_MotorNumber	= MotorNumber;				// Uniuqe Pump number - NEEDED / DELETE?
+	_MotorNumber	= MotorNumber;				// Unique Pump number - NEEDED / DELETE?
 	_std_distance	= std_distance;				// Standard range (steps) the slider should moves when feeding
 	_dir_home		= dir_home;					// Direction to home (1 = CW, -1 = CCW)
 	_stepper_speed	= stepper_speed;			// Speed of the stepper motor
@@ -55,6 +55,7 @@ FP3000::FP3000(byte MotorNumber, long std_distance, long max_range, long dir_hom
 	// Flags / Variables
 	bool expander_endstop_signal;				// Endstop signal from MCP23017
 	unsigned long startTime = 0;				// Timer for delays
+	float scaleCal = 3145.0;					// Scale calibration value (def. for 500g scale: 3145.0)
 
 }
 
@@ -172,7 +173,6 @@ byte FP3000::SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tco
 
 byte FP3000::SetupScale(uint8_t nvmAddress, uint8_t dataPin, uint8_t clockPin) {
 	_nvmAddress = nvmAddress;
-	float scaleCalVal;
 	iAmScale = true;
 	
 	// Read scale calibration from file
@@ -188,26 +188,33 @@ byte FP3000::SetupScale(uint8_t nvmAddress, uint8_t dataPin, uint8_t clockPin) {
 	// Read from the file
 	File file = LittleFS.open(filename, "r");
 	if (file) {
-		file.read((uint8_t*)&scaleCalVal, sizeof(scaleCalVal));
+		file.read((uint8_t*)&scaleCal, sizeof(scaleCal));
 		file.close();
 	
-	/* // Uncomment if you want to see the calibration value
+	/*
+	// Uncomment if you want to see the calibration value
 	Serial.print("Scale Calibration Value: ");
-	Serial.println(scaleCalVal);
+	Serial.println(scaleCal);
 	*/
 
 	}
 	else {
-		// Error opening file, calibration needed to create data
-Warning = SCALE_CALFILE;
-return WARNING;
+	// Failed to open file, calibration needed.
+	Warning = SCALE_CALFILE;
 	}
+
+	// Stop file system
 	LittleFS.end();
 
 	// Set up Scale
 	Scale.begin(dataPin, clockPin, true);
-	Scale.set_scale(scaleCalVal);
+	Scale.set_scale(scaleCal);
 	Scale.tare(20);
+
+	// Return Status
+	if(Warning == SCALE_CALFILE){
+		return WARNING;
+	}
 	return OK;
 }
 
@@ -291,7 +298,7 @@ byte FP3000::MoveCycle() {
 	if (currentPosition == homePosition) {
 		setPosition = targetPosition;
 	}
-	else if (currentPosition >= targetPosition) {
+	else if (abs(currentPosition) >= abs(targetPosition)) {
 		setPosition = homePosition;
 	}
 
@@ -342,11 +349,11 @@ byte FP3000::MoveCycleAccurate() {
 		setPosition = prePosition;
 	}
 	// If the motor is at the pre-position, do the stopping motion
-	else if(currentPosition >= prePosition && currentPosition < targetPosition) {
+	else if(abs(currentPosition) >= abs(prePosition) && abs(currentPosition) < abs(targetPosition)) {
 		setPosition = currentPosition + (_std_distance * 0.05 * (-1) * _dir_home);	// Move 5% of std_distance	
 	}
 	// If the motor is at the target position, move back home
-	else if (currentPosition >= targetPosition) {
+	else if (abs(currentPosition) >= abs(targetPosition)) {
 		setPosition = homePosition;
 	}
 
@@ -678,13 +685,12 @@ byte FP3000::CalibrateScale(bool serialResult) {
 	// =================================================================================================================================
 
 	// Variables
-	float scale; // Scale calibration value
-	bool readyToSafe = false; // Flag to indicate if calibration is ready to save (saving is done in one step at the end)
+	bool readyToSafe = false;		// Flag to save calibration to file
 
 	// Verbose Calibration
 	// ---------------------------------------------------------------------------------------------------------------------------------
 	if (serialResult) {
-		Serial.println("\n\nCALIBRATION\n===========");
+		Serial.println("\n\nCALIBRATION \n===========");
 		Serial.println("remove all weight from the loadcell");
 		//  flush Serial input
 		while (Serial.available()) Serial.read();
@@ -722,21 +728,21 @@ byte FP3000::CalibrateScale(bool serialResult) {
 		Serial.print("WEIGHT: ");
 		Serial.println(weight);
 		Scale.calibrate_scale(weight, 20);
-		scale = Scale.get_scale();
+		scaleCal = Scale.get_scale();
 
 		Serial.print("SCALE:  ");
-		Serial.println(scale, 6);
+		Serial.println(scaleCal, 6);
 
 		Serial.print("\nuse scale.set_offset(");
 		Serial.print(offset);
 		Serial.print("); and scale.set_scale(");
-		Serial.print(scale, 6);
+		Serial.print(scaleCal, 6);
 		Serial.print(");\n");
 		Serial.println("in the setup of your project");
 		Serial.println("\n\n");
 
 		Serial.println("Saving calibration to file now...");
-		readyToSafe = true;
+		calState = SAVEING_CALIBRATION;
 	}
 	// ---------------------------------------------------------------------------------------------------------------------------------
 
@@ -771,12 +777,19 @@ byte FP3000::CalibrateScale(bool serialResult) {
 		case CALIBRATING:
 			// Calibrate the scale with 20g and 20 measurements
 			Scale.calibrate_scale(20, 20);
+			scaleCal = Scale.get_scale();
+
 			// Move to next state
 			calState = SAVEING_CALIBRATION;
 			break;
 		case SAVEING_CALIBRATION:
-			// Saving, see below.
-			readyToSafe= true;
+		// Save calibration to file
+			readyToSafe = true;
+
+			break;
+		case FINISHED:
+		// Reset calibration state
+		calState = WAITING;
 			break;
 		default:
 			// Error, unknown state
@@ -785,11 +798,12 @@ byte FP3000::CalibrateScale(bool serialResult) {
 		}
 	}
 	// ---------------------------------------------------------------------------------------------------------------------------------
-
+	
 
 	// Save calibration to file
 	// ---------------------------------------------------------------------------------------------------------------------------------
 	if (readyToSafe) {
+
 		// Check if file system is mounted)
 		if (!LittleFS.begin()) {
 			if(serialResult){
@@ -805,7 +819,7 @@ byte FP3000::CalibrateScale(bool serialResult) {
 
 		// Write to the file
 		if (file) {
-			file.write((uint8_t*)&scale, sizeof(scale));
+			file.write((uint8_t*)&scaleCal, sizeof(scaleCal));
 			file.close();
 		}
 		else {
@@ -847,8 +861,8 @@ void FP3000::EmergencyMove(uint16_t eCurrent, byte eCycles) {
 	StepperDriver.rms_current(eCurrent);	// Sets the current in milliamps.
 	StepperMotor.setSpeedInStepsPerSecond(_stepper_speed / 4);
 
-	// Check if it is a scale or pump motor
-	if (iAmScale) {
+	// Check if it is a scale or pump motor (if iAmScale is true, it is the dumper motor)
+	if (!iAmScale) {
 		// First move a bit towards the endstop (could help to unblock)
 		StepperMotor.moveRelativeInSteps(_std_distance * 0.2 * _dir_home);
 		
@@ -884,8 +898,6 @@ byte FP3000::ManageError(byte error_code) {
 
 	// =================================================================================================================================
 	// This is to handle errors:
-	// TODO: finalise this function... [...]
-	// 
 	// The function receives an error code and tries to resolve it. If the error is resolved, a warning (3) is triggered and the
 	// function returns 3. If the error could not be resolved, a major error (2) is triggered and the function returns 2. Errors and
 	// warnings are saved at Errors / Warrnings and can be checked via function "CheckError() / CheckWarning()".

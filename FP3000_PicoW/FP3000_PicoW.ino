@@ -22,6 +22,9 @@
  * [X] - Error Management:
  *    [x] - Detect Calibration Error (dif. IR vs Stall)
  *    [x] - EMGY Mode
+ * [ ] - Implement Fill Senor
+ *	  [ ] - Sensor Full and Empty reading
+ *    [ ] - Estimation of fill level
  * [x] - Comunicate (Serial only)
  * [x] - Handle/implement multicore. >> Comunication on Core 0, Motor on Core 1.
  * [x] - Implement multible pumps control.
@@ -107,6 +110,8 @@
 #define SDA_PIN				16			// SDA pin
 #define	VV_EN				22			// 5V Enable Pin
 #define	EXPANDER			true		// Use expander (true) or not (false)
+#define FILL_SENSOR_L11		3			// Fill sensor pin, if 99 then no sensor (via expander MCP23017)
+#define FILL_SENSOR_H12		4			// Fill sensor pin, if 99 then no sensor (via expander MCP23017)
 
 // Other Settings
 #define APP_OFFSET			4.0			// Offset in g for approx. feeding (default 4g)
@@ -128,18 +133,13 @@ enum FPMode : byte {
 MCP23017 mcp = MCP23017(MCP_ADDRESS);
 //---------------------------------*
 
-
-// TESTING - DELETE LATER
-uint32_t  FIFO_c0 = 0;			// FIFO message from Core 0 to Core 1
-uint32_t  FIFO_c1 = 0;			// FIFO message from Core 1 to Core 0
-uint32_t  FIFO_R_c0 = 0;		// FIFO message read from at Core 0
-uint32_t  FIFO_R_c1 = 0;		// FIFO message read from at Core 1
-//---------------------------------*
-
 // Create Pumps
 // Add pumps here if needed (e.g. 
-FP3000 Scale_0(MOTOR_0, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_0, SPEED, STALL_VALUE, HOME_STALL_VALUE, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_0, mcp, EXPANDER, MCP_INTA);
-FP3000 Pump_1(MOTOR_1, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_1, SPEED, STALL_VALUE, HOME_STALL_VALUE, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_1, mcp, EXPANDER, MCP_INTA);
+FP3000 Dumper(MOTOR_0, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_0, SPEED, STALL_VALUE, HOME_STALL_VALUE,
+	SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_0, mcp, EXPANDER, MCP_INTA);
+
+FP3000 Pump_1(MOTOR_1, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_1, SPEED, STALL_VALUE, HOME_STALL_VALUE,
+	SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_1, mcp, EXPANDER, MCP_INTA);
 //---------------------------------*
 
 // END OF CONFIG+++++++++++++++++++++++++++++++++++++++++++++
@@ -190,17 +190,15 @@ void setup1() {
 	pinMode(VV_EN, OUTPUT);
 	pinMode(DIAG_1, INPUT);
 	digitalWrite(VV_EN, HIGH);
-
-	// TODO: UPADTE PIN SETUP FOR EXPANDER
-	pinMode(15, INPUT);
+	pinMode(MCP_INTA, INPUT);
 
 
 	// Driver Setup
 	SERIAL_PORT_1.begin(115200);
 
 	// Setup Expander
-	Wire.setSCL(17);
-	Wire.setSDA(16);
+	Wire.setSCL(SLC_PIN);
+	Wire.setSDA(SDA_PIN);
 	Wire.begin();
 	if (!mcp.Init()) {	// Check if MCP23017 is connected
 		type = 'E';
@@ -218,16 +216,10 @@ void setup1() {
 	byte setupResult = NOT_STARTED;					// Return from setup functions
 	digitalWrite(DRIVER_ENABLE, LOW);				// Enable Driver
 
-		// Setup Scale 0
-		setupResult = Scale_0.SetupScale(SCALE_NVM_1, DATA_PIN_1, CLOCK_PIN_1);
-		if (setupResult != OK) {
-			ReceiveWarningsErrors_c1(Scale_0, SCALE_1);
-		}
-
 		// Setup Motor 0
-		setupResult = Scale_0.SetupMotor(CURRENT, MIRCO_STEPS, TCOOLS, STEP_0, DIR_0, LIMIT_0, DIAG_0, ACCEL);
+		setupResult = Dumper.SetupMotor(CURRENT, MIRCO_STEPS, TCOOLS, STEP_0, DIR_0, LIMIT_0, DIAG_0, ACCEL);
 		if (setupResult != OK) {
-			ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
+			ReceiveWarningsErrors_c1(Dumper, MOTOR_0);
 		}
 
 		// Setup Motor 1
@@ -235,6 +227,13 @@ void setup1() {
 		if (setupResult != OK) {
 			ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
 		}
+
+		// Setup Scale 1
+		setupResult = Pump_1.SetupScale(SCALE_NVM_1, DATA_PIN_1, CLOCK_PIN_1);
+		if (setupResult != OK) {
+			ReceiveWarningsErrors_c1(Pump_1, SCALE_1);
+		}
+
 	//---------------------------------*
 	
 	// Setup finished
@@ -299,7 +298,7 @@ void loop1() {
 		ERROR,
 		WARNING
 	};
-	static byte scaleReturn = BUSY;
+	static byte dumperReturn = BUSY;
 	static byte pumpReturn = BUSY;
 
 	// Feeding Modes
@@ -390,14 +389,14 @@ void loop1() {
 			Power_c1(true);
 
 			// Prime Scale
-			if (scaleReturn == BUSY) {
-				scaleReturn = Scale_0.Prime();
-				if (scaleReturn == ERROR || scaleReturn == WARNING) {
-					ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
+			if (dumperReturn == BUSY) {
+				dumperReturn = Dumper.Prime();
+				if (dumperReturn == ERROR || dumperReturn == WARNING) {
+					ReceiveWarningsErrors_c1(Dumper, MOTOR_0);
 				}
 			}
 
-			// Wait for Scale to finishe, then Prime Pump
+			// Wait for Scale to finish, then Prime Pump
 			else if (pumpReturn == BUSY) {
 				pumpReturn = Pump_1.Prime();
 				if (pumpReturn == ERROR || pumpReturn == WARNING) {
@@ -407,8 +406,8 @@ void loop1() {
 
 			// Check if priming is finished
 			// If reset flags and go to next mode.
-			if (scaleReturn != BUSY && pumpReturn != BUSY) {
-				scaleReturn = BUSY;
+			if (dumperReturn != BUSY && pumpReturn != BUSY) {
+				dumperReturn = BUSY;
 				pumpReturn = BUSY;
 				feedMode = APPROX;
 			}
@@ -419,7 +418,7 @@ void loop1() {
 			// Do one cycle, then check if the desired amount
 			// (APP_OFFSET) is reached. If not, do another cycle.
 			if (Pump_1.MoveCycle() != BUSY) {
-				if (Scale_0.Measure(2) >= feedingAmount_1 - APP_OFFSET) {
+				if (Pump_1.Measure(2) >= feedingAmount_1 - APP_OFFSET) {
 					feedCycles = 0; // Reset feed cycles
 					feedMode = ACCURATE;
 				}
@@ -438,14 +437,14 @@ void loop1() {
 		case ACCURATE:
 			// Accurate
 			if (Pump_1.MoveCycleAccurate() != BUSY) {
-				if (Scale_0.Measure(3) >= feedingAmount_1) {
+				if (Pump_1.Measure(3) >= feedingAmount_1) {
 					
 					// Return slider back to home position and do final measurement
 					if (Pump_1.MoveTo(0) != BUSY) {
 						
 						// Do Final Measurement and send data to Core 0
 						// (Uses floatToUint16 to convert measured float to uint16_t)
-						PackPushData('A', SCALE_1, floatToUint16(Scale_0.Measure(7)));
+						PackPushData('A', SCALE_1, floatToUint16(Pump_1.Measure(7)));
 						
 						// Reset feed cycles
 						feedCycles = 0;
@@ -471,9 +470,9 @@ void loop1() {
 			if (Pump_1.MoveTo(0) != BUSY) {
 
 				// Empty Scale
-				if(Scale_0.EmptyScale() != BUSY) {
+				if(Dumper.EmptyScale() != BUSY) {
 					// Check if there was something to warn about (stall).
-					ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
+					ReceiveWarningsErrors_c1(Dumper, MOTOR_0);
 					ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
 					
 					Mode_c1 = IDLE; // Back to IDLE
@@ -510,7 +509,7 @@ void loop1() {
 		// -------------------------
 		while (calStatus <= 4) { // 5 = Calibration successful			
 			// Calibrate
-			calStatus = Scale_0.CalibrateScale(false);
+			calStatus = Pump_1.CalibrateScale(false);
 			// Send calibration updates to Core 0.
 			if (prevCalStatus != calStatus) {
 				PackPushData('C', 0, calStatus);
@@ -551,9 +550,9 @@ void loop1() {
 		Pump_1.AutotuneStall(true, true);
 		ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
 
-		while (Scale_0.HomeMotor() == BUSY);
-		Scale_0.AutotuneStall(true, true);
-		ReceiveWarningsErrors_c1(Scale_0, MOTOR_0);
+		while (Dumper.HomeMotor() == BUSY);
+		Dumper.AutotuneStall(true, true);
+		ReceiveWarningsErrors_c1(Dumper, MOTOR_0);
 
 		// Turn off power
 		Power_c1(false);
@@ -583,7 +582,7 @@ void loop1() {
 		Power_c1(true);
 
 		// Emergency Move
-		Scale_0.EmergencyMove(EMGY_CURRENT, EMGY_CYCLES);
+		Dumper.EmergencyMove(EMGY_CURRENT, EMGY_CYCLES);
 		Pump_1.EmergencyMove(EMGY_CURRENT, EMGY_CYCLES);
 
 		// Turn off power

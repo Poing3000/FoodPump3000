@@ -13,7 +13,7 @@
 #define _FP3000_h
 
 #include <Arduino.h>
-#include "src/SpeedyStepper4Purr.h"
+#include "SpeedyStepper4Purr.h"
 #include <TMCStepper.h>
 #include <MCP23017.h>
 #include <HX711.h>
@@ -70,6 +70,7 @@ private:
 	byte _mcp_INTA;							// INTA pin for MCP23017
 	byte _nvmAddress;						// Address for saving calibration data
 	bool iAmScale;							// Automatically set true when SetupScale() is called.
+	float scaleCal;							// Scale calibration value
 
 	// States / Flags / Variables
 	byte homing_result;
