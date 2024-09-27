@@ -1,35 +1,12 @@
 /*
  * Name:	FoodPump3000
  * Author:	Poing3000
- * Status:	Dev
+ * Status:	Beta
  *
  * Description:
  * This code is for the cat food pump, called Futterpumpe (Foodpump3000).
  * It is built for a Raspberry Pico W and a TMC2209 stepper driver.
  * Further info at: https://github.com/Poing3000/FoodPump3000
- *
- * Updates - DEV:
- * [x] - Prime (find endstop)
- *		// Note, can be changed by setting "LIMIT" or "STALL" in Homing (Line 134)
- *		[x] - Find endstop with IR Sensor
- *		[x] - Find endstop with Stall
- *		[x] - Use IR as default homing sensor (later use stall as backup and for error management).
- *		[x] - Implement own homing function (error management/stall detection) >> SEE SpeedyStepper4Purr.h
- * [x] - Approx. filling
- * [x] - Accurate filling
- * [x] - TMC2209 Prime with IR Sensor check
- * [x] - Calibrate with IR Sensor
- * [X] - Error Management:
- *    [x] - Detect Calibration Error (dif. IR vs Stall)
- *    [x] - EMGY Mode
- * [ ] - Implement Fill Senor
- *	  [ ] - Sensor Full and Empty reading
- *    [ ] - Estimation of fill level
- * [x] - Comunicate (Serial only)
- * [x] - Handle/implement multicore. >> Comunication on Core 0, Motor on Core 1.
- * [x] - Implement multible pumps control.
- *
- * [ ] - *Future wish: Use RP2040 PIO for Stepper control.
  *
  */
  

@@ -1,7 +1,7 @@
 /*
  * Name:	FoodPump3000
  * Author:	Poing3000
- * Status:	ALPHA
+ * Status:	Beta
  *
  * Description:
  * This code is for the cat food pump, also called Futterpumpe or FoodPump3000.
@@ -26,7 +26,7 @@
 
 // SETUP FUNCTIONS
 
-FP3000::FP3000(byte MotorNumber, long std_distance, long max_range, long dir_home, float stepper_speed, uint8_t stall_val, uint8_t home_stall_val,
+FP3000::FP3000(byte MotorNumber, long std_distance, long max_range, long dir_home, float stepper_speed, uint8_t stall_val, bool auto_stall_red,
 	HardwareSerial &serial, float driver_rsense, uint8_t driver_address, MCP23017 &mcpRef, bool use_expander, byte mcp_INTA)
 	: StepperMotor(MotorNumber), StepperDriver(&serial, driver_rsense, driver_address), mcp(mcpRef) {
 
@@ -36,7 +36,8 @@ FP3000::FP3000(byte MotorNumber, long std_distance, long max_range, long dir_hom
 	_dir_home		= dir_home;					// Direction to home (1 = CW, -1 = CCW)
 	_stepper_speed	= stepper_speed;			// Speed of the stepper motor
 	_stall_val		= stall_val;				// Stall value for normal operation
-	_home_stall_val = home_stall_val;			// Stall value for homing
+	_home_stall_val	= stall_val;				// Stall value for homing
+	_auto_stall_red = auto_stall_red;			// Automatic stall reduction
 	_max_range		= max_range;				// Max range for Motor movement
 	_use_expander	= use_expander;				// Use MCP23017 for endstop
 	_mcp_INTA		= mcp_INTA;					// INTA pin for MCP23017
@@ -48,14 +49,14 @@ FP3000::FP3000(byte MotorNumber, long std_distance, long max_range, long dir_hom
 	homingState		= START;					// Set default homing state
 
 	// Initialize States
-	byte homing_result = BUSY;
-	byte primeStatus = BUSY;
-	byte calState = WAITING;
+	homing_result = BUSY;
+	primeStatus = BUSY;
+	calState = WAITING;
 
 	// Flags / Variables
-	bool expander_endstop_signal;				// Endstop signal from MCP23017
-	unsigned long startTime = 0;				// Timer for delays
-	float scaleCal = 3145.0;					// Scale calibration value (def. for 500g scale: 3145.0)
+	startTime = 0;							// Timer for delays
+	scaleCal = 3145.0;						// Scale calibration value (def. for 500g scale: 3145.0)
+	reduceStall = false;					// Flag to reduce stall value
 
 }
 
@@ -74,7 +75,7 @@ byte FP3000::SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tco
 	StepperDriver.internal_Rsense(false);		// false = deactivates internal resistor (it can't handle necessary currents).
 	StepperDriver.mstep_reg_select(true);		// Microstep through UART, not by Pins.
 	StepperDriver.rms_current(motor_current);	// Sets the current in milliamps.
-	StepperDriver.SGTHRS(_stall_val);			// Set the stall value from 0-255. Higher value will make it stall quicker.
+	StepperDriver.SGTHRS(_stall_val);			// Set the stall value from 0-255. Higher value will make it indicate a stall quicker.
 	StepperDriver.microsteps(mic_steps);		// Set microsteps.
 	StepperDriver.TCOOLTHRS(tcool);				// Min. speed for stall detection.
 	StepperDriver.TPWMTHRS(0);					// Disable StealthChop PWM.
@@ -98,12 +99,10 @@ byte FP3000::SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tco
 	byte driverResult = Test_Connection();
 
 	// Read stall values from file if not set
-	byte stallReadResult = OK;
 	if (_stall_val == 0 ) {
 		// Check if file system is mounted
 		if (!LittleFS.begin()) {
 			Error = FILE_SYSTEM;
-			stallReadResult = ERROR;
 		}
 
 		// Read stall value from file
@@ -119,8 +118,11 @@ byte FP3000::SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tco
 		else {
 			// Error opening file, calibration needed to create data
 			Warning = STALL_CALFILE;
-			stallReadResult = WARNING;
+
+			// Set a default stall value
+			_stall_val = 30;
 		}
+		
 		/* // Uncomment if you want to see the stall values
 		Serial.print("Stall Value: ");
 		Serial.println(_stall_val);
@@ -133,7 +135,6 @@ byte FP3000::SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tco
 		// Check if file system is mounted
 		if (!LittleFS.begin()) {
 			Error = FILE_SYSTEM;
-			stallReadResult = ERROR;
 		}
 		// Read home stall value from file
 		char filename[20];
@@ -148,10 +149,12 @@ byte FP3000::SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tco
 		else {
 			// Error opening file, calibration needed to create data
 			Warning = STALL_CALFILE;
-			stallReadResult = WARNING;
+
+			// Set a default stall value
+			_stall_val = 30;
 		}
 		
-		/* // Uncomment if you want to see the calibration value
+		/*// Uncomment if you want to see the calibration value
 		Serial.print("Home Stall Value: ");
 		Serial.println(_home_stall_val);
 		*/
@@ -191,8 +194,7 @@ byte FP3000::SetupScale(uint8_t nvmAddress, uint8_t dataPin, uint8_t clockPin) {
 		file.read((uint8_t*)&scaleCal, sizeof(scaleCal));
 		file.close();
 	
-	/*
-	// Uncomment if you want to see the calibration value
+	/* // Uncomment if you want to see the calibration value
 	Serial.print("Scale Calibration Value: ");
 	Serial.println(scaleCal);
 	*/
@@ -235,6 +237,12 @@ byte FP3000::CheckError() {
 // Check Warning
 byte FP3000::CheckWarning() {
 	byte _Warning = Warning;
+
+	// Check if there is a stall warning and if it can be reduced
+	if (reduceStall) {
+		_Warning = ReduceStall();
+	}
+
 	Warning = NO_WARNING;	// Reset Warning
 	return _Warning;
 }
@@ -309,15 +317,16 @@ byte FP3000::MoveCycle() {
 	// If so, return OK (one cyle finished) if there was no stall detected (WARNING).
 	currentPosition = StepperMotor.getCurrentPositionInSteps();
 	if (currentPosition == homePosition && moveResult){
-		
 		if (StepperMotor.checkStall()) {
+			// Sometimes autotune isn't perfect. Also, the pump may be new and still
+			// wearing in. This flags that stall should be reduced (will be done at next warning check from main loop).
+			reduceStall = true;
 			Warning = STEPPER_STALL;
-			Warning = STEPPER_STALL;
+
 			return WARNING;
 		}
 		else {
 			return OK;
-		
 		}
 	}
 	return BUSY;
@@ -336,9 +345,9 @@ byte FP3000::MoveCycleAccurate() {
 	// =================================================================================================================================
 
 	// Variables
-	long setPosition;
+	long setPosition = 0;
 	long homePosition = 0;
-	long prePosition = (_std_distance * 0.6 * (-1) * _dir_home);	// Pre-position (60% of std_distance)
+	long prePosition = (_std_distance * 0.5 * (-1) * _dir_home);	// Pre-position (50% of std_distance)
 	long targetPosition = (_std_distance * (-1) * _dir_home);
 
 	// Get current position
@@ -350,7 +359,7 @@ byte FP3000::MoveCycleAccurate() {
 	}
 	// If the motor is at the pre-position, do the stopping motion
 	else if(abs(currentPosition) >= abs(prePosition) && abs(currentPosition) < abs(targetPosition)) {
-		setPosition = currentPosition + (_std_distance * 0.05 * (-1) * _dir_home);	// Move 5% of std_distance	
+		setPosition = currentPosition + (_std_distance * 0.01 * (-1) * _dir_home);	// Move 1% of std_distance	
 	}
 	// If the motor is at the target position, move back home
 	else if (abs(currentPosition) >= abs(targetPosition)) {
@@ -365,13 +374,13 @@ byte FP3000::MoveCycleAccurate() {
 	if (moveResult == true) {
 
 		if (StepperMotor.checkStall()) {
-			Warning = STEPPER_STALL;
+			// Flag stall reduction request
+			reduceStall = true;
 			Warning = STEPPER_STALL;
 			return WARNING;
 		}
 		else {
 			return OK;
-
 		}
 	}
 
@@ -392,7 +401,7 @@ byte FP3000::EmptyScale(){
 	// =================================================================================================================================
 
 	// Variables
-	long setPosition;
+	long setPosition = 0;
 	long homePosition = 0;
 	long targetPosition = (_std_distance * (-1) * _dir_home);
 
@@ -409,16 +418,21 @@ byte FP3000::EmptyScale(){
 	// If the motor is at the standard distance, do the back and forth motion
 	if (moveResult == true) {
 		// Move back and forth - BLOCKING
-		for(int i = 0; i < 2; i++){
+		for(int i = 0; i < 3; i++){
 			delay(200);
 			StepperMotor.moveRelativeInSteps(_std_distance * 0.2 * _dir_home);
 			StepperMotor.moveRelativeInSteps(_std_distance * 0.2 * (-1) * _dir_home);
 		}
 
+		// Move back home (doesn't need to go all the way back)
+		StepperMotor.moveRelativeInSteps(_std_distance * 0.9 * _dir_home);
+
 		// Finish and check for stall
 		if (StepperMotor.checkStall()) {
+			// Flag stall reduction request
+			reduceStall = true;
 			Warning = STEPPER_STALL;
-			Warning = STEPPER_STALL;
+
 			return WARNING;
 		}
 		else {
@@ -475,8 +489,11 @@ byte FP3000::HomeMotor() {
 	case START:
 		// Set a differnt (more sensitive) stall value for homing if wanted
 		StepperDriver.SGTHRS(_home_stall_val);
-		// Check expander pin for endstop signal
-		expander_endstop_signal = mcp.getPin(_MotorNumber, A);
+		if (_use_expander) {
+			// Check expander pin for endstop signal
+			expander_endstop_signal = mcp.getPin(_MotorNumber, A); // CHECK DELETE
+		}
+		StepperMotor.checkStall();	// Reset stall measurement
 		homingState = HOMING;
 		break;
 	case HOMING:
@@ -488,7 +505,7 @@ byte FP3000::HomeMotor() {
 				// Reset expander interrupt
 				mcp.getIntCap(A);
 			}			
-			// Home Pump with expander
+			// Home with expander
 			homing_result = StepperMotor.moveToHome(_dir_home, _max_range, expander_endstop_signal);
 
 		}
@@ -549,10 +566,10 @@ byte FP3000::AutotuneStall(bool quickCheck, bool saveToFile) {
 
 	// =====================================================================================================================================
 	// This is to automatically find and set the stall value for the motor:
-	// 1. Sets _stall_val to a reasonable value of 200 (100 for quick check).
-	// 2. Moves once away from endstop by std_distance * (factor = 1%).
-	// 3. Checks if stall occurs; if yes, decrease stall value by 1, return to start and repeat; though if _stall_val < 10 return 0 (error).
-	// 4. If no stall occurs, return to start and increase factor by 1% and repeat until factor is 100%.
+	// 1. Set _stall_val to a reasonable value of 200 (100 for quick check).
+	// 2. Move once away from endstop by std_distance * (factor = 1%).
+	// 3. Check if stall occurs; if yes, decrease stall value by 1, return to start and repeats; though if _stall_val < 10 return 0 (error).
+	// 4. If no stall occurs, return to start and increase factor by 1% and repeat until factor is 90%.
 	// 5. Finally check if stall occurs when moving away (std_distance) and back to endstop.
 	// If no stall occurs finish and return _stall_val; though if stall is true start again from beginning.
 	// NOTE, if quickCheck is true, the function will run way faster, but in some instances it may be less accurate - quickCheck = true is
@@ -570,7 +587,7 @@ byte FP3000::AutotuneStall(bool quickCheck, bool saveToFile) {
 		_stall_val = 100;
 		factor = 0.1;
 		stepFactor = 0.05;
-		checkStep = 10;
+		checkStep = 5;
 	}
 	else {
 		// SLOW CHECK SETTINGS
@@ -590,8 +607,11 @@ byte FP3000::AutotuneStall(bool quickCheck, bool saveToFile) {
 		stallFlag = StepperMotor.moveRelativeInSteps(_std_distance * factor * (-_dir_home));
 
 		if (stallFlag) {
-			// Reduce stall value
-			_stall_val -= checkStep;
+			//  Reduce stall value but check if stall value is too low
+			if ((_stall_val -= checkStep) <= 10) {
+				Error = STALL_CALIBRATION;
+				return ERROR;
+			}
 			// Return to start
 			StepperMotor.moveRelativeInSteps(_std_distance * factor * _dir_home);
 			// Repeat
@@ -606,52 +626,70 @@ byte FP3000::AutotuneStall(bool quickCheck, bool saveToFile) {
 				factor = stepFactor;
 				checkFlag = true;
 			}
-
 		}
 	}
-	_home_stall_val = _stall_val-2;		// Set stall value for homing (reduce by 2 just to make sure)
+	_home_stall_val = _stall_val-5;		// Set stall value for homing (reduce by 5 just to make sure)
 	_stall_val -= 10;					// Reduce stall value by a safety margin of 10
 	StepperDriver.SGTHRS(_stall_val);	// Set final stall value
 
 	// Save stall value to file
 	if (saveToFile) {
-		// Check if file system is mounted
-		if (!LittleFS.begin()) {
-			Error = FILE_SYSTEM;
+		if (!SaveStallVal()) {
 			return ERROR;
-		}
-
-		// Write stall value to file
-		char filename[20];
-		sprintf(filename, "/stall_%d.bin", _nvmAddress);
-		File file = LittleFS.open(filename, "w");
-
-		if (file) {
-			file.write((uint8_t*)&_stall_val, sizeof(_stall_val));
-			file.close();
-		}
-		else {
-			Error = FILE_SYSTEM;
-			return ERROR;
-		}
-
-		// Write home stall value to file
-		sprintf(filename, "/home_stall_%d.bin", _nvmAddress);
-		file = LittleFS.open(filename, "w");
-
-		if (file) {
-			file.write((uint8_t*)&_home_stall_val, sizeof(_home_stall_val));
-			file.close();
-		}
-		else {
-			Error = FILE_SYSTEM;
-			return ERROR;
-		}
-
-		LittleFS.end();
+		};
 	}
 
+	// If this the dumper drive, move it to the top position so it doesn't block food dispensing for the pumps tuning,
+	StepperMotor.moveRelativeInSteps(_std_distance * (-1) * _dir_home);
+
+
 	return _stall_val;
+}
+
+// Save Stall Value to File
+bool FP3000::SaveStallVal() {
+
+	// =================================================================================================================================
+	// This is to save the stall value to a file:
+	// The function will save the stall value to a file, which can be read after a power cycle. The function will return true if the
+	// stall value was saved successfully and false if there was an error.
+	// =================================================================================================================================
+	
+	// Check if file system is mounted
+	if (!LittleFS.begin()) {
+		Error = FILE_SYSTEM;
+		return false;
+	}
+
+	// Write stall value to file
+	char filename[20];
+	sprintf(filename, "/stall_%d.bin", _nvmAddress);
+	File file = LittleFS.open(filename, "w");
+
+	if (file) {
+		file.write((uint8_t*)&_stall_val, sizeof(_stall_val));
+		file.close();
+	}
+	else {
+		Error = FILE_SYSTEM;
+		return false;
+	}
+
+	// Write home stall value to file
+	sprintf(filename, "/home_stall_%d.bin", _nvmAddress);
+	file = LittleFS.open(filename, "w");
+
+	if (file) {
+		file.write((uint8_t*)&_home_stall_val, sizeof(_home_stall_val));
+		file.close();
+	}
+	else {
+		Error = FILE_SYSTEM;
+		return false;
+	}
+
+	LittleFS.end();
+	return true;
 }
 
 // Measure Food
@@ -904,7 +942,6 @@ byte FP3000::ManageError(byte error_code) {
 	// =================================================================================================================================
 
 	byte result = BUSY;
-	bool stallFlag = false;
 
 	// Check type of Error
 	// ---------------------------------------------------------
@@ -915,7 +952,7 @@ byte FP3000::ManageError(byte error_code) {
 	// ---------------------------------------------------------
 	if (error_code == 2) {
 		// Endstop sensor STUCK HIGH, try to home with stall detection.
-		byte homing_result = BUSY;
+		homing_result = BUSY;
 		while (homing_result == BUSY) {
 			homing_result = StepperMotor.moveToHome(_dir_home, _max_range, false);
 		}
@@ -969,6 +1006,7 @@ byte FP3000::ManageError(byte error_code) {
 	return result;
 }
 
+// Timer Delay
 bool FP3000::timerDelay(unsigned int delayTimeInSeconds) {
   unsigned long currentTime = millis();
 
@@ -986,6 +1024,31 @@ bool FP3000::timerDelay(unsigned int delayTimeInSeconds) {
 
   // If delayTime seconds haven't passed yet, return false
   return false;
+}
+
+// Reduce Stall Value
+byte FP3000::ReduceStall() {
+	// Sometimes autotune / stall detection isn't perfect. Also, the pump
+	// may be new and still wearing in. This will reduce the stall value.
+
+	reduceStall = false; // Reset flag
+
+	// Check if stall value is not too low
+	if (_stall_val >= 20 && _auto_stall_red == true) {
+		_stall_val -= 5;
+		_home_stall_val -= 5;
+
+		// Set new stall value
+		StepperDriver.SGTHRS(_stall_val);
+
+		// Save stall value to file
+		SaveStallVal();
+
+		return STALL_REDUCE;
+	}
+	else {
+		return STEPPER_STALL;
+	}
 }
 
 // END OF PRIVATE FUNCTIONS++++++++++++++++++++++++++++++++++

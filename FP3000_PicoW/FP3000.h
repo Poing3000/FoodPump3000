@@ -1,7 +1,7 @@
 /*
  * Name:	FoodPump3000
  * Author:	Poing3000
- * Status:	Dev
+ * Status:	Beta
  *
  * Description:
  * This code is header for the cat food pump, also called Futterpumpe or Foodpump3000.
@@ -24,7 +24,7 @@ class FP3000 {
 public:
 
 	// pulblic members
-	FP3000(byte MotorNumber, long std_distance, long max_range, long dir_home, float stepper_speed, uint8_t stall_val, uint8_t home_stall_val,
+	FP3000(byte MotorNumber, long std_distance, long max_range, long dir_home, float stepper_speed, uint8_t stall_val, bool auto_stall_red,
 		HardwareSerial &serialT, float driver_rsense, uint8_t driver_address, MCP23017 &mcpRef, bool use_expander, byte mcp_INTA);
 
 	byte SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tcool, byte step_pin, byte dir_pin, byte limit_pin, byte diag_pin, float stepper_accel);
@@ -38,6 +38,7 @@ public:
 	byte AutotuneStall(bool quickCheck, bool saveToFile);
 	byte CheckError();
 	byte CheckWarning();
+	bool SaveStallVal();
 	float Measure(byte measurments);
 	byte CalibrateScale(bool serialResult);
 	void EmergencyMove(uint16_t eCurrent, byte eCycles);
@@ -51,6 +52,7 @@ private:
 	// private functions
 	byte ManageError(byte error_code);
 	bool timerDelay(unsigned int delayTime);
+	byte ReduceStall();
 
 	// private members
 	SpeedyStepper4Purr StepperMotor;
@@ -66,6 +68,7 @@ private:
 	float _stepper_speed;					// Speed of the stepper motor
 	uint8_t _stall_val;						// Stall value for normal operation
 	uint8_t _home_stall_val;				// Stall value for homing
+	bool _auto_stall_red;					// Automatically reduce stall value
 	bool _use_expander;						// Use MCP23017 for endstop
 	byte _mcp_INTA;							// INTA pin for MCP23017
 	byte _nvmAddress;						// Address for saving calibration data
@@ -78,6 +81,7 @@ private:
 	byte calState;
 	bool expander_endstop_signal;
 	unsigned long startTime;
+	bool reduceStall;
 
 	// Syntax for function returns
 	enum ReturnCode : byte {
@@ -91,8 +95,7 @@ private:
 	enum HomingState {
 		START,
 		HOMING,
-		DONE,
-		HOME_ERROR
+		DONE
 	}; HomingState homingState;
 
 	// Error and Warning Codes
@@ -103,7 +106,8 @@ private:
 		STEPPER_JAMMED,
 		SCALE_CONNECTION,
 		FILE_SYSTEM,
-		FEED_CYCLES
+		FEED_CYCLES,
+		STALL_CALIBRATION
 	}; ErrorCode Error;
 
 	enum WarningCode : byte {
@@ -111,8 +115,10 @@ private:
 		STEPPER_FREEDRIVE,
 		STEPPER_ENDSTOP,
 		STEPPER_STALL,
+		STALL_REDUCE,
 		SCALE_CALFILE,
-		STALL_CALFILE
+		STALL_CALFILE,
+		NA
 	}; WarningCode Warning;
 
 	enum CalibrationCode : byte {
