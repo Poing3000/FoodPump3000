@@ -13,11 +13,11 @@
 #define _FP3000_h
 
 #include <Arduino.h>
-#include "SpeedyStepper4Purr.h"
 #include <TMCStepper.h>
 #include <MCP23017.h>
 #include <HX711.h>
 #include <LittleFS.h>
+#include "src/SpeedyStepper4Purr.h"
 
 class FP3000 {
 
