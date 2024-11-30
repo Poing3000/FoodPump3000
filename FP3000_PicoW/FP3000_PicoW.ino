@@ -42,7 +42,7 @@
 
 #define CURRENT				400			// Max current (mA) supplied to the motor
 #define	STALL_VALUE			0			// Stall threshold [0..255] (lower = more sensitive) >> use AutotuneStall(bool quickCheck) to find the best value. Set to 0 if you want stall values loaded from file.
-#define HOME_STALL_VALUE	0			// Stall threshold for homing [0..255] (lower = more sensitive) >> use AutotuneStall(bool quickCheck) to find the best value. Set to 0 if you want stall values loaded from file.
+#define AUTO_STALL_RED		true		// This allows for automatic stall threshold reduction / adaption (not part of TMCStepper library).
 #define MIRCO_STEPS			32			// Set microsteps (32 is a good compromise between CPU load and noise)
 #define TCOOLS				400			// max 20 bits
 #define EMGY_CURRENT		1000		// Emergency current (mA) (default 1000mA)
@@ -62,7 +62,7 @@
 #define	LIMIT_0				99			// Limit switch pin (via expander MCP23017)
 #define	DIAG_0				3			// DIAG pin for stall detection
 #define	DRIVER_ADDRESS_0	0b00		// Drivers address (0b01: MS1 is LOW and MS2 is HIGH)			
-#define DIR_TO_HOME_0		1			// Direction to home (1 = CW, -1 = CCW)
+#define DIR_TO_HOME_0		1			// Direction to home (1 = CW, -1 = CCW).
 
 // Stepper Motor 1
 #define MOTOR_1				1			// Unique device number
@@ -112,10 +112,10 @@ MCP23017 mcp = MCP23017(MCP_ADDRESS);
 
 // Create Pumps
 // Add pumps here if needed (e.g. 
-FP3000 Dumper(MOTOR_0, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_0, SPEED, STALL_VALUE, HOME_STALL_VALUE,
+FP3000 Dumper(MOTOR_0, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_0, SPEED, STALL_VALUE, AUTO_STALL_RED,
 	SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_0, mcp, EXPANDER, MCP_INTA);
 
-FP3000 Pump_1(MOTOR_1, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_1, SPEED, STALL_VALUE, HOME_STALL_VALUE,
+FP3000 Pump_1(MOTOR_1, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_1, SPEED, STALL_VALUE, AUTO_STALL_RED,
 	SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_1, mcp, EXPANDER, MCP_INTA);
 //---------------------------------*
 

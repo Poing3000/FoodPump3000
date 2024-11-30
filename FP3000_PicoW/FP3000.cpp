@@ -66,7 +66,7 @@ byte FP3000::SetupMotor(uint16_t motor_current, uint16_t mic_steps, uint32_t tco
 	byte step_pin, byte dir_pin, byte limit_pin, byte diag_pin, float stepper_accel) {
 
 	// Set Up Driver
-	// (Check TMC2209Stepper.h for more details on the functions and settings)
+	// (Check TMCStepper.h for more details on the functions and settings)
 	
 	StepperDriver.begin();						// Start driver
 	StepperDriver.toff(4);						// Not used, but required to enable the motor
