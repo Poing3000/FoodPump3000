@@ -9,7 +9,7 @@ However, its true potential is realized when it is integrated into the [Purr Ple
 The Food Pump 3000 is compatible with the Raspberry Pico W and can be conveniently programmed using the Arduino IDE. Further it is using TMC2209 stepper drivers.
 All design parts can be found at: [PRINTABLES](https://www.printables.com/model/1144252-food-pump-3000-cat-food-pump).
 
-A more detailed description on the CatFeeder Project can be found at: [CLIMBING-ENGINEER.COM](https://www.climbing-engineer.com/automatic-cat-feeder.html).
+A more detailed description on the CatFeeder Project can be found at: [climbing-engineer.com](https://www.climbing-engineer.com/automatic-cat-feeder.html).
 
 # Main Features
 In the folder [FP3000_PicoW](FP3000_PicoW) there are three files and an src folder.
@@ -29,7 +29,7 @@ So to wrap it up; the easiest way is to download [FP3000_PicoW](FP3000_PicoW) an
 
 # Usage
 The follwowing briefly describes the usage of the **FP3000** library, further details can be found in the comments in the code itself.
-Note the physical use (e.g. hardware wiring) depends on the individual implementation. The example **FP3000_PicoW.ino** provides an example on which pins may be used etc (see #define sections). In case further help is needed I suggest to have a look at the [Purr Pleaser 3000](https://github.com/Poing3000/PurrPleaser3000) project or for Single feeding: [SINGLE FEEDER]https://www.climbing-engineer.com/automatic-single-cat-feeder-2.html. These projects have a finsihed hardware implementation (schematics etc.) and show how **FP3000** can be used.
+Note the physical use (e.g. hardware wiring) depends on the individual implementation. The example **FP3000_PicoW.ino** provides an example on which pins may be used etc (see #define sections). In case further help is needed I suggest to have a look at the [Purr Pleaser 3000](https://github.com/Poing3000/PurrPleaser3000) project or for Single feeding: [Single Feeder](https://www.climbing-engineer.com/automatic-single-cat-feeder-2.html). These projects have a finsihed hardware implementation (schematics etc.) and show how **FP3000** can be used.
 
 ## Constructor
 To initialize the FP3000 object, use the following (long) constructor:
