@@ -7,9 +7,9 @@ The Food Pump 3000 is a standalone automatic cat feeder pump.
 However, its true potential is realized when it is integrated into the [Purr Pleaser 3000](https://github.com/Poing3000/PurrPleaser3000), a fully automated cat feeding system designed for multiple cats.
 
 The Food Pump 3000 is compatible with the Raspberry Pico W and can be conveniently programmed using the Arduino IDE. Further it is using TMC2209 stepper drivers.
-All design parts can be found at: [PRINTABLES](https://www.printables.com/model/1144252-food-pump-3000-cat-food-pump).
+All design parts can be found at: [Printables](https://www.printables.com/model/1144252-food-pump-3000-cat-food-pump).
 
-A more detailed description on the CatFeeder Project can be found at: [climbing-engineer.com](https://www.climbing-engineer.com/automatic-cat-feeder.html).
+A more detailed description on the CatFeeder Project can be found at: [FoodPump description](https://www.climbing-engineer.com/automatic-single-cat-feeder-2.html) and [Cat Feeder Project](https://www.climbing-engineer.com/automatic-cat-feeder.html).
 
 # Main Features
 In the folder [FP3000_PicoW](FP3000_PicoW) there are three files and an src folder.
